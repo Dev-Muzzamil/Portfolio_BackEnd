@@ -53,6 +53,10 @@ const projectSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  completedAtInstitution: {
+    type: String,
+    trim: true
+  },
   reports: [{
     title: {
       type: String,

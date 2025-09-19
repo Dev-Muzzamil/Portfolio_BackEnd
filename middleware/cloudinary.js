@@ -115,7 +115,9 @@ const uploadToCloudinary = async (buffer, folder = 'portfolio', options = {}) =>
         { quality: 'auto' }
       ],
       'portfolio/certificates': [
-        { width: 800, height: 600, crop: 'fill' },
+        { quality: 'auto' }
+      ],
+      'portfolio/certificates/thumbnails': [
         { quality: 'auto' }
       ],
       'portfolio/resume': [
@@ -133,6 +135,7 @@ const uploadToCloudinary = async (buffer, folder = 'portfolio', options = {}) =>
     };
 
     // For resume folder, don't apply transformations to PDFs
+    // For certificate thumbnails, don't apply any transformations
     const transformations = defaultTransformations[folder] || [
       { width: 500, height: 500, crop: 'fill', gravity: 'face' },
       { quality: 'auto' }
@@ -168,7 +171,7 @@ const uploadToCloudinary = async (buffer, folder = 'portfolio', options = {}) =>
     const uploadOptions = {
       folder: folder,
       resource_type: resourceType,
-      transformation: (folder === 'portfolio/resume' || folder === 'portfolio/certificates' || resourceType === 'raw') ? undefined : transformations, // No transformations for resume/certificate folders or raw files
+      transformation: (folder === 'portfolio/resume' || folder === 'portfolio/certificates' || folder === 'portfolio/certificates/thumbnails' || resourceType === 'raw') ? undefined : transformations, // No transformations for resume/certificate folders, thumbnails, or raw files
       public_id: publicId, // Use the filename with extension
       access_mode: 'public', // Ensure files are publicly accessible
       use_filename: true, // Use original filename

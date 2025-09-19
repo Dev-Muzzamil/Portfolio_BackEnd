@@ -16,8 +16,8 @@ router.get('/', async (req, res) => {
       about = {
         name: 'Your Name',
         title: 'Full Stack Developer',
-        bio: 'Add your bio here...',
-        shortBio: 'Add your short bio here...',
+        bio: ['Add your bio here...'],
+        shortBio: ['Add your short bio here...'],
         socialLinks: {},
         experience: [],
         education: []
@@ -35,8 +35,10 @@ router.get('/', async (req, res) => {
 router.put('/', auth, [
   body('name').notEmpty().withMessage('Name is required'),
   body('title').notEmpty().withMessage('Title is required'),
-  body('bio').notEmpty().withMessage('Bio is required'),
-  body('shortBio').notEmpty().withMessage('Short bio is required')
+  body('bio').isArray({ min: 1 }).withMessage('Bio must contain at least one paragraph'),
+  body('bio.*').notEmpty().withMessage('Bio paragraphs cannot be empty'),
+  body('shortBio').isArray({ min: 1 }).withMessage('Short bio must contain at least one paragraph'),
+  body('shortBio.*').notEmpty().withMessage('Short bio paragraphs cannot be empty')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -146,7 +148,7 @@ router.post('/upload-resume', auth, uploadResume.single('resume'), async (req, r
       return res.status(400).json({ message: 'No file uploaded' });
     }
 
-    const { title } = req.body;
+    const { title, documentType } = req.body;
 
     // Upload to Cloudinary with original filename
     const result = await uploadToCloudinary(req.file.buffer, 'portfolio/resume', {
@@ -160,6 +162,7 @@ router.post('/upload-resume', auth, uploadResume.single('resume'), async (req, r
       mimeType: req.file.mimetype,
       size: req.file.size,
       title: title || req.file.originalname.split('.')[0],
+      documentType: documentType || 'resume',
       isActive: false
     };
 
@@ -174,7 +177,7 @@ router.post('/upload-resume', auth, uploadResume.single('resume'), async (req, r
     }
     
     res.json({ 
-      message: 'Resume uploaded successfully',
+      message: `${documentType === 'cv' ? 'CV' : 'Resume'} uploaded successfully`,
       resume: resumeData,
       about 
     });

@@ -175,26 +175,78 @@ async function captureAndUpload(url, publicIdPrefix = 'project_screenshots', pro
   }
 
   const browser = await puppeteer.launch({ 
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    args: [
+      '--no-sandbox', 
+      '--disable-setuid-sandbox', 
+      '--disable-dev-shm-usage',
+      '--disable-web-security',
+      '--disable-features=VizDisplayCompositor',
+      '--force-device-scale-factor=1',
+      '--high-dpi-support=1'
+    ],
     headless: 'new'
   });
   
   try {
     const page = await browser.newPage();
-    await page.setViewport({ width: 1920, height: 1080 });
+    
+    // Set high-quality viewport for 1080p screenshots
+    await page.setViewport({ 
+      width: 1920, 
+      height: 1080,
+      deviceScaleFactor: 1 // Ensure crisp 1:1 pixel ratio
+    });
+    
+    // Set user agent for better compatibility
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     
     await page.goto(url, { 
       waitUntil: 'networkidle2', 
-      timeout: 45000
+      timeout: 60000 // Increased timeout for heavy sites
     });
 
-    // Wait 5 seconds for heavy websites to fully load and settle
-    await page.waitForTimeout(5000);
+    // Wait for page to fully load and settle
+    await page.waitForTimeout(3000);
+    
+    // Wait for any lazy-loaded images or content
+    await page.evaluate(() => {
+      return new Promise((resolve) => {
+        let totalHeight = 0;
+        const timer = setInterval(() => {
+          const newHeight = document.body.scrollHeight;
+          if (newHeight !== totalHeight) {
+            totalHeight = newHeight;
+          } else {
+            clearInterval(timer);
+            resolve();
+          }
+        }, 100);
+        
+        // Resolve after 5 seconds regardless
+        setTimeout(() => {
+          clearInterval(timer);
+          resolve();
+        }, 5000);
+      });
+    });
 
-    const buffer = await page.screenshot({
+    // Capture multiple screenshots for better coverage
+    const screenshots = [];
+    
+    // Full page screenshot first
+    const fullPageBuffer = await page.screenshot({
+      fullPage: true,
+      type: 'jpeg',
+      quality: 95,
+      optimizeForSpeed: false
+    });
+    
+    // Viewport screenshot (1080p)
+    const viewportBuffer = await page.screenshot({
       fullPage: false,
       type: 'jpeg',
-      quality: 90,
+      quality: 95,
+      optimizeForSpeed: false,
       clip: {
         x: 0,
         y: 0,
@@ -203,15 +255,33 @@ async function captureAndUpload(url, publicIdPrefix = 'project_screenshots', pro
       }
     });
 
-    const publicId = `${publicIdPrefix}/${Date.now()}`;
-    const result = await uploadBufferToCloudinary(buffer, { 
-      public_id: publicId, 
+    // Upload both screenshots
+    const timestamp = Date.now();
+    
+    // Upload full page screenshot
+    const fullPageResult = await uploadBufferToCloudinary(fullPageBuffer, { 
+      public_id: `${publicIdPrefix}/${timestamp}_fullpage`, 
       folder: publicIdPrefix,
-      quality: 'auto:best'
+      quality: 'auto:best',
+      format: 'jpg',
+      transformation: [
+        { width: 1920, height: 1080, crop: 'fit', quality: 'auto:best' }
+      ]
+    });
+    
+    // Upload viewport screenshot (1080p)
+    const viewportResult = await uploadBufferToCloudinary(viewportBuffer, { 
+      public_id: `${publicIdPrefix}/${timestamp}_viewport`, 
+      folder: publicIdPrefix,
+      quality: 'auto:best',
+      format: 'jpg'
     });
 
-    console.log(`📸 New screenshot uploaded: ${result.secure_url}`);
-    return result;
+    console.log(`📸 Full page screenshot uploaded: ${fullPageResult.secure_url}`);
+    console.log(`📸 Viewport screenshot uploaded: ${viewportResult.secure_url}`);
+    
+    // Return the viewport screenshot as primary (1080p)
+    return viewportResult;
   } catch (error) {
     console.error(`❌ Error capturing ${url}:`, error.message);
     throw error;

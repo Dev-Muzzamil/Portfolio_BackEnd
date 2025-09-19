@@ -39,14 +39,23 @@ router.post('/login', [
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
+    // Create access token (30 minutes)
     const token = jwt.sign(
-      { id: user._id },
+      { id: user._id, type: 'access' },
+      process.env.JWT_SECRET || 'your-secret-key',
+      { expiresIn: '30m' }
+    );
+
+    // Create refresh token (7 days)
+    const refreshToken = jwt.sign(
+      { id: user._id, type: 'refresh' },
       process.env.JWT_SECRET || 'your-secret-key',
       { expiresIn: '7d' }
     );
 
     res.json({
       token,
+      refreshToken,
       user: {
         id: user._id,
         username: user.username,
@@ -56,6 +65,53 @@ router.post('/login', [
     });
   } catch (error) {
     console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Refresh token endpoint
+router.post('/refresh', async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    
+    if (!refreshToken) {
+      return res.status(401).json({ message: 'Refresh token required' });
+    }
+
+    // Verify refresh token
+    const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET || 'your-secret-key');
+    
+    if (decoded.type !== 'refresh') {
+      return res.status(401).json({ message: 'Invalid token type' });
+    }
+
+    // Find user
+    const user = await User.findById(decoded.id);
+    if (!user) {
+      return res.status(401).json({ message: 'User not found' });
+    }
+
+    // Generate new access token
+    const newToken = jwt.sign(
+      { id: user._id, type: 'access' },
+      process.env.JWT_SECRET || 'your-secret-key',
+      { expiresIn: '30m' }
+    );
+
+    res.json({
+      token: newToken,
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        role: user.role
+      }
+    });
+  } catch (error) {
+    console.error('Refresh token error:', error);
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      return res.status(401).json({ message: 'Invalid or expired refresh token' });
+    }
     res.status(500).json({ message: 'Server error' });
   }
 });

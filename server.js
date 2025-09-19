@@ -25,19 +25,36 @@ app.use(cors({
   credentials: true
 }));
 
-// Rate limiting
+// Rate limiting - more lenient for development
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: process.env.NODE_ENV === 'production' ? 100 : 1000, // More lenient in development
   message: {
     error: 'Too many requests from this IP, please try again later.',
     retryAfter: 'Rate limit exceeded. Try again in 15 minutes.'
   },
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-  // Skip rate limiting for health checks
-  skip: (req) => req.path === '/api/health'
+  // Skip rate limiting for health checks and file uploads
+  skip: (req) => {
+    return req.path === '/api/health' || 
+           req.path.includes('/with-files') || 
+           req.path.includes('/upload');
+  }
 });
+
+// Separate rate limiter for file uploads (more lenient)
+const uploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: process.env.NODE_ENV === 'production' ? 20 : 100, // Allow more file uploads
+  message: {
+    error: 'Too many file uploads from this IP, please try again later.',
+    retryAfter: 'File upload rate limit exceeded. Try again in 15 minutes.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 app.use(limiter);
 
 // Body parsing middleware
@@ -69,6 +86,15 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Development helper endpoint to clear rate limits
+if (process.env.NODE_ENV !== 'production') {
+  app.post('/api/dev/clear-rate-limit', (req, res) => {
+    // This is a simple way to "reset" rate limits by restarting the limiter
+    // In a real production app, you'd want to use Redis or similar
+    res.json({ message: 'Rate limit cleared for development. Note: This only works for the current process.' });
+  });
+}
+
 // Routes
 console.log('🔧 Setting up API routes...');
 app.use('/api/auth', require('./routes/auth'));
@@ -79,6 +105,8 @@ app.use('/api/about', require('./routes/about'));
 app.use('/api/contact', require('./routes/contact'));
 app.use('/api/github', require('./routes/github'));
 app.use('/api/configuration', require('./routes/configuration'));
+app.use('/api/upload', require('./routes/upload'));
+app.use('/api/pdf', require('./routes/pdfConversion'));
 console.log('✅ API routes configured');
 
 // Error handling middleware

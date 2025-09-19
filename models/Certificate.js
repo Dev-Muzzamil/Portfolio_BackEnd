@@ -52,7 +52,9 @@ const certificateSchema = new mongoose.Schema({
     isPrimary: {
       type: Boolean,
       default: false
-    }
+    },
+    thumbnailUrl: String, // For PDF thumbnails
+    thumbnailPublicId: String // Cloudinary public ID for thumbnail
   }],
   skills: [{
     type: String,
@@ -71,6 +73,46 @@ const certificateSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Project'
   }],
+  completedAtInstitution: {
+    type: String,
+    trim: true
+  },
+  reports: [{
+    title: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    description: {
+      type: String,
+      trim: true
+    },
+    type: {
+      type: String,
+      enum: ['file', 'link'],
+      required: true
+    },
+    file: {
+      url: String,
+      publicId: String,
+      originalName: String,
+      mimeType: String,
+      size: Number
+    },
+    link: {
+      url: String,
+      platform: String, // e.g., 'linkedin', 'github', 'medium', 'other'
+      title: String
+    },
+    visible: {
+      type: Boolean,
+      default: true
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now
+    }
+  }]
 }, {
   timestamps: true
 });

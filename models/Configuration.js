@@ -21,8 +21,14 @@ const siteInfoSchema = new mongoose.Schema({
   title: { type: String, required: true },
   shortBio: { type: String, required: true },
   bio: { type: String, required: true },
+  bioParagraphs: [{ type: String }], // Array of bio paragraphs
   tagline: { type: String, default: '' },
   website: { type: String, default: '' }
+});
+
+const brandingSchema = new mongoose.Schema({
+  logo: { type: String, default: '' },
+  icon: { type: String, default: '' }
 });
 
 const statsSchema = new mongoose.Schema({
@@ -51,6 +57,9 @@ const themeSchema = new mongoose.Schema({
 const configurationSchema = new mongoose.Schema({
   // Site Information
   siteInfo: { type: siteInfoSchema, required: true },
+  
+  // Branding
+  branding: { type: brandingSchema, default: {} },
   
   // Contact Information
   contactInfo: { type: contactInfoSchema, required: true },

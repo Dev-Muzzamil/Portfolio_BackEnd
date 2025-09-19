@@ -227,6 +227,60 @@ router.post('/sync-screenshots', auth, async (req, res) => {
   }
 });
 
+// Manual screenshot capture for specific project (admin only)
+router.post('/:id/capture-screenshot', auth, async (req, res) => {
+  try {
+    const project = await Project.findById(req.params.id);
+    if (!project) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
+
+    if (!project.liveUrls || project.liveUrls.length === 0) {
+      return res.status(400).json({ message: 'Project has no live URLs to capture' });
+    }
+
+    const liveUrl = project.liveUrls[0];
+    console.log(`📸 Manual screenshot capture for project: ${project.title} - URL: ${liveUrl}`);
+
+    const result = await captureAndUpload(liveUrl, `project_${project._id}`, project._id);
+    
+    if (result) {
+      // Update the project with the new screenshot URL
+      await Project.findByIdAndUpdate(project._id, {
+        $push: {
+          images: {
+            url: result.secure_url,
+            publicId: result.public_id,
+            alt: `${project.title} screenshot`,
+            isPrimary: true
+          }
+        }
+      });
+
+      res.json({ 
+        success: true, 
+        message: 'Screenshot captured successfully',
+        screenshot: {
+          url: result.secure_url,
+          publicId: result.public_id
+        }
+      });
+    } else {
+      res.json({ 
+        success: false, 
+        message: 'Screenshot capture skipped (recent screenshots exist)' 
+      });
+    }
+  } catch (error) {
+    console.error('Manual screenshot capture error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to capture screenshot',
+      error: error.message 
+    });
+  }
+});
+
 // Get all projects (public)
 router.get('/', async (req, res) => {
   try {
@@ -236,6 +290,7 @@ router.get('/', async (req, res) => {
       .sort({ order: 1, createdAt: -1 });
     console.log('🔗 DEBUG: Projects fetched:', projects.length);
     console.log('🔗 DEBUG: Sample project with linkedCertificates:', projects[0]?.linkedCertificates);
+    console.log('🔗 DEBUG: Sample project completedAtInstitution:', projects[0]?.completedAtInstitution);
     res.json(projects);
   } catch (error) {
     console.error('🔗 DEBUG: Error fetching projects:', error);
@@ -304,6 +359,56 @@ router.post('/', auth, [
 // Update project (admin only)
 router.put('/:id', auth, async (req, res) => {
   try {
+    // Handle technology update
+    if (req.body.updateTechnology) {
+      const { oldName, newName } = req.body.updateTechnology;
+      
+      const project = await Project.findById(req.params.id);
+      if (!project) {
+        return res.status(404).json({ message: 'Project not found' });
+      }
+
+      // Update the technology in the technologies array
+      const technologyIndex = project.technologies.findIndex(tech => tech === oldName);
+      if (technologyIndex === -1) {
+        return res.status(404).json({ message: 'Technology not found in project' });
+      }
+
+      project.technologies[technologyIndex] = newName;
+      await project.save();
+      
+      return res.json({
+        message: 'Technology updated successfully',
+        project: project
+      });
+    }
+
+    // Handle technology removal
+    if (req.body.removeTechnology) {
+      const technologyToRemove = req.body.removeTechnology;
+      
+      const project = await Project.findById(req.params.id);
+      if (!project) {
+        return res.status(404).json({ message: 'Project not found' });
+      }
+
+      // Remove the technology from the technologies array
+      const initialLength = project.technologies.length;
+      project.technologies = project.technologies.filter(tech => tech !== technologyToRemove);
+      
+      if (project.technologies.length === initialLength) {
+        return res.status(404).json({ message: 'Technology not found in project' });
+      }
+
+      await project.save();
+      
+      return res.json({
+        message: 'Technology removed successfully',
+        project: project
+      });
+    }
+
+    // Regular project update
     // Truncate shortDescription if it's too long
     if (req.body.shortDescription && req.body.shortDescription.length > 500) {
       req.body.shortDescription = req.body.shortDescription.substring(0, 497) + '...';

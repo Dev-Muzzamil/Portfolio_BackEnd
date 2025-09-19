@@ -81,8 +81,18 @@ async function createDefaultConfiguration() {
       title: aboutData?.title || 'Computer Science Engineer & Tech Enthusiast',
       shortBio: aboutData?.shortBio || 'Pursuing M.Tech in Computer Science from Osmania University. Passionate about software development, AI, machine learning, and building innovative solutions.',
       bio: aboutData?.bio || 'I am a postgraduate student from Hyderabad, pursuing an M.Tech in Computer Science (AI & ML) from Osmania University. I have a knowledge of Java, Python, and web technologies, with a strong foundation in AI, machine learning, and sentiment analysis.',
+      bioParagraphs: [
+        'I am a postgraduate student from Hyderabad, pursuing an M.Tech in Computer Science (AI & ML) from Osmania University.',
+        'I have a knowledge of Java, Python, and web technologies, with a strong foundation in AI, machine learning, and sentiment analysis.',
+        'During my B.Tech, I worked on projects like "Missing Child Identification System Using Deep Learning" and "Network Intrusion Detection System Using Machine Learning."',
+        'Currently, I am exploring new technologies and working on multilingual sentiment analysis using Google Cloud.'
+      ],
       tagline: 'Building innovative solutions',
       website: aboutData?.socialLinks?.website || 'https://syedmuzzamilali.me'
+    },
+    branding: {
+      logo: '',
+      icon: ''
     },
     contactInfo: {
       email: aboutData?.email || 'sd.muzzamilali@gmail.com',

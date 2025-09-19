@@ -1,10 +1,23 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
+const rateLimit = require('express-rate-limit');
 const Certificate = require('../models/Certificate');
 const auth = require('../middleware/auth');
-const { uploadCertificate, uploadToCloudinary, deleteFromCloudinary } = require('../middleware/cloudinary');
+const { uploadCertificate, uploadReports, uploadToCloudinary, deleteFromCloudinary } = require('../middleware/cloudinary');
 
 const router = express.Router();
+
+// Rate limiter for file uploads
+const uploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: process.env.NODE_ENV === 'production' ? 20 : 100, // Allow more file uploads in development
+  message: {
+    error: 'Too many file uploads from this IP, please try again later.',
+    retryAfter: 'File upload rate limit exceeded. Try again in 15 minutes.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // Add missing dependencies with error handling
 let pdfParse, Tesseract;
@@ -73,7 +86,7 @@ router.post('/', auth, [
 });
 
 // Create certificate with files (admin only)
-router.post('/with-files', auth, uploadCertificate.array('files', 10), [
+router.post('/with-files', uploadLimiter, auth, uploadCertificate.array('files', 10), [
   body('title').notEmpty().withMessage('Title is required'),
   body('issuer').notEmpty().withMessage('Issuer is required'),
   body('issueDate').isISO8601().withMessage('Valid issue date is required')
@@ -95,14 +108,44 @@ router.post('/with-files', auth, uploadCertificate.array('files', 10), [
             originalname: file.originalname
           });
           
-          uploadedFiles.push({
+          const fileData = {
             url: result.secure_url,
             publicId: result.public_id,
             originalName: file.originalname,
             mimeType: file.mimetype,
             size: file.size,
             isPrimary: uploadedFiles.length === 0 // First file is primary
-          });
+          };
+
+          // Generate thumbnail for PDF files
+          if (file.mimetype === 'application/pdf') {
+            try {
+              const pdfToImage = require('../utils/pdfToImage');
+              const thumbnailResult = await pdfToImage.convertPDFToImage(file.buffer, {
+                pageNumber: 1,
+                quality: 85 // Higher quality since we're keeping original size
+              });
+
+              if (thumbnailResult.success) {
+                const thumbnailUpload = await uploadToCloudinary(
+                  thumbnailResult.imageBuffer, 
+                  'portfolio/certificates/thumbnails',
+                  {
+                    originalname: `${file.originalname}_thumb.jpg`
+                  }
+                );
+                
+                fileData.thumbnailUrl = thumbnailUpload.secure_url;
+                fileData.thumbnailPublicId = thumbnailUpload.public_id;
+                console.log('PDF thumbnail generated:', file.originalname);
+              }
+            } catch (thumbnailError) {
+              console.error('Failed to generate PDF thumbnail:', file.originalname, thumbnailError);
+              // Continue without thumbnail - not critical
+            }
+          }
+          
+          uploadedFiles.push(fileData);
         } catch (uploadError) {
           console.error('Failed to upload file:', file.originalname, uploadError);
           // Continue with other files even if one fails
@@ -147,6 +190,90 @@ router.post('/with-files', auth, uploadCertificate.array('files', 10), [
 // Update certificate (admin only)
 router.put('/:id', auth, async (req, res) => {
   try {
+    // Handle skill update
+    if (req.body.updateSkill) {
+      const { oldName, newName } = req.body.updateSkill;
+      
+      const certificate = await Certificate.findById(req.params.id);
+      if (!certificate) {
+        return res.status(404).json({ message: 'Certificate not found' });
+      }
+
+      // Parse skills if they're stored as JSON string
+      let skillsArray = certificate.skills;
+      if (Array.isArray(skillsArray) && skillsArray.length === 1 && typeof skillsArray[0] === 'string' && skillsArray[0].startsWith('[')) {
+        try {
+          skillsArray = JSON.parse(skillsArray[0]);
+        } catch (e) {
+          // Keep as is if parsing fails
+        }
+      } else if (typeof skillsArray === 'string') {
+        try {
+          skillsArray = JSON.parse(skillsArray);
+        } catch (e) {
+          skillsArray = skillsArray.split(',').map(s => s.trim()).filter(s => s.length > 0);
+        }
+      }
+
+      // Update the skill in the skills array
+      const skillIndex = skillsArray.findIndex(skill => skill === oldName);
+      if (skillIndex === -1) {
+        return res.status(404).json({ message: 'Skill not found in certificate' });
+      }
+
+      skillsArray[skillIndex] = newName;
+      certificate.skills = skillsArray;
+      await certificate.save();
+      
+      return res.json({
+        message: 'Skill updated successfully',
+        certificate: certificate
+      });
+    }
+
+    // Handle skill removal
+    if (req.body.removeSkill) {
+      const skillToRemove = req.body.removeSkill;
+      
+      const certificate = await Certificate.findById(req.params.id);
+      if (!certificate) {
+        return res.status(404).json({ message: 'Certificate not found' });
+      }
+
+      // Parse skills if they're stored as JSON string
+      let skillsArray = certificate.skills;
+      if (Array.isArray(skillsArray) && skillsArray.length === 1 && typeof skillsArray[0] === 'string' && skillsArray[0].startsWith('[')) {
+        try {
+          skillsArray = JSON.parse(skillsArray[0]);
+        } catch (e) {
+          // Keep as is if parsing fails
+        }
+      } else if (typeof skillsArray === 'string') {
+        try {
+          skillsArray = JSON.parse(skillsArray);
+        } catch (e) {
+          skillsArray = skillsArray.split(',').map(s => s.trim()).filter(s => s.length > 0);
+        }
+      }
+
+      // Remove the skill from the skills array
+      const initialLength = skillsArray.length;
+      skillsArray = skillsArray.filter(skill => skill !== skillToRemove);
+      
+      if (skillsArray.length === initialLength) {
+        return res.status(404).json({ message: 'Skill not found in certificate' });
+      }
+
+      certificate.skills = skillsArray;
+      await certificate.save();
+      
+      return res.json({
+        message: 'Skill removed successfully',
+        certificate: certificate
+      });
+    }
+
+    // Regular certificate update
     const certificate = await Certificate.findByIdAndUpdate(
       req.params.id,
       req.body,
@@ -951,6 +1078,171 @@ router.delete('/:id', auth, async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Upload report file (admin only)
+router.post('/:id/reports/upload', auth, uploadReports.array('files', 5), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, description } = req.body;
+    
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ message: 'No files uploaded' });
+    }
+
+    const certificate = await Certificate.findById(id);
+    if (!certificate) {
+      return res.status(404).json({ message: 'Certificate not found' });
+    }
+
+    const uploadedReports = [];
+    
+    for (const file of req.files) {
+      // Upload to Cloudinary
+      const result = await uploadToCloudinary(file.buffer, 'portfolio/reports');
+      
+      const reportData = {
+        title: title || file.originalname.split('.')[0],
+        description: description || '',
+        type: 'file',
+        file: {
+          url: result.secure_url,
+          publicId: result.public_id,
+          originalName: file.originalname,
+          mimeType: file.mimetype,
+          size: file.size
+        },
+        visible: true
+      };
+      
+      uploadedReports.push(reportData);
+    }
+    
+    certificate.reports.push(...uploadedReports);
+    await certificate.save();
+    
+    res.json({
+      message: 'Report files uploaded successfully',
+      reports: uploadedReports,
+      certificate
+    });
+  } catch (error) {
+    console.error('Report upload error:', error);
+    res.status(500).json({ message: 'Failed to upload report files' });
+  }
+});
+
+// Add report link (admin only)
+router.post('/:id/reports/link', auth, [
+  body('title').notEmpty().withMessage('Title is required'),
+  body('url').isURL().withMessage('Valid URL is required'),
+  body('platform').optional().isString(),
+  body('description').optional().isString()
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { id } = req.params;
+    const { title, url, platform, description } = req.body;
+    
+    const certificate = await Certificate.findById(id);
+    if (!certificate) {
+      return res.status(404).json({ message: 'Certificate not found' });
+    }
+
+    const reportData = {
+      title,
+      description: description || '',
+      type: 'link',
+      link: {
+        url,
+        platform: platform || 'other',
+        title: title
+      },
+      visible: true
+    };
+    
+    certificate.reports.push(reportData);
+    await certificate.save();
+    
+    res.json({
+      message: 'Report link added successfully',
+      report: reportData,
+      certificate
+    });
+  } catch (error) {
+    console.error('Report link error:', error);
+    res.status(500).json({ message: 'Failed to add report link' });
+  }
+});
+
+// Delete report (admin only)
+router.delete('/:id/reports/:reportId', auth, async (req, res) => {
+  try {
+    const { id, reportId } = req.params;
+    
+    const certificate = await Certificate.findById(id);
+    if (!certificate) {
+      return res.status(404).json({ message: 'Certificate not found' });
+    }
+
+    const report = certificate.reports.id(reportId);
+    if (!report) {
+      return res.status(404).json({ message: 'Report not found' });
+    }
+
+    // Delete file from Cloudinary if it's a file report
+    if (report.type === 'file' && report.file && report.file.publicId) {
+      try {
+        await deleteFromCloudinary(report.file.publicId);
+      } catch (deleteError) {
+        console.warn('Failed to delete file from Cloudinary:', deleteError);
+      }
+    }
+
+    certificate.reports.pull(reportId);
+    await certificate.save();
+    
+    res.json({
+      message: 'Report deleted successfully',
+      certificate
+    });
+  } catch (error) {
+    console.error('Report delete error:', error);
+    res.status(500).json({ message: 'Failed to delete report' });
+  }
+});
+
+// Toggle report visibility (admin only)
+router.patch('/:id/reports/:reportId/visibility', auth, async (req, res) => {
+  try {
+    const { id, reportId } = req.params;
+    const { visible } = req.body;
+    
+    const certificate = await Certificate.findById(id);
+    if (!certificate) {
+      return res.status(404).json({ message: 'Certificate not found' });
+    }
+
+    const report = certificate.reports.id(reportId);
+    if (!report) {
+      return res.status(404).json({ message: 'Report not found' });
+    }
+
+    report.visible = visible;
+    await certificate.save();
+    
+    res.json({
+      message: `Report ${visible ? 'shown' : 'hidden'} successfully`,
+      certificate
+    });
+  } catch (error) {
+    console.error('Report visibility toggle error:', error);
+    res.status(500).json({ message: 'Failed to toggle report visibility' });
   }
 });
 
