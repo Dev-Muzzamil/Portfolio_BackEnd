@@ -192,6 +192,7 @@ if (!adminRoutes) {
       });
       app.use('/api/v1/admin', adminRouter);
       app.use('/api/v1', rootRouter);
+      
     }
   } catch (err) {
     console.warn('Auto-mount admin routes failed:', err && err.message);
@@ -204,6 +205,9 @@ if (!adminRoutes) {
 app.get('/api/v1/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date(), uptime: process.uptime(), version: '1.0.0' });
 });
+
+// Minimal health endpoint for container orchestrators / Docker
+app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
 
 // ERROR HANDLING
 app.use((err, req, res, next) => {

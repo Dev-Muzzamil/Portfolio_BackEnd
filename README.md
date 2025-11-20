@@ -189,6 +189,24 @@ backend/
 3. Add environment variables in Railway dashboard
 4. Deploy automatically on push
 
+### Docker
+
+Build a production image and run a container locally (use `.env` or pass envs directly):
+
+```bash
+# Build (from backend/)
+docker build -t portfolio-backend:latest .
+
+# Run with .env file (exposes the port and mounts env vars)
+docker run --env-file ./.env -p 5000:5000 --name portfolio-backend portfolio-backend:latest
+```
+
+Notes:
+- The server uses port `5000` by default (you can override with `PORT` env var).
+- Ensure `MONGODB_ATLAS_URI` or `MONGODB_URI` is configured and available to the container (via network or env).
+- Puppeteer, Tesseract and Poppler are installed in the image; if you rely on a specific language for Tesseract add it via the Dockerfile.
+
+
 ## Development
 
 1. Clone the repository
