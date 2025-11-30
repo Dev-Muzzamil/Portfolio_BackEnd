@@ -275,6 +275,19 @@ app.listen(PORT, () => {
   } else {
     console.log('ℹ️  CRON_SECRET not set, screenshot refresh disabled');
   }
+
+  // Auto-start email watching if email is configured
+  if (process.env.EMAIL_USER && process.env.EMAIL_PASS && process.env.CONTACT_DISABLE_EMAIL !== 'true') {
+    setTimeout(async () => {
+      try {
+        const { startEmailWatch } = require('./utils/emailFetcher');
+        await startEmailWatch();
+        console.log('📧 Email watch started automatically');
+      } catch (err) {
+        console.log('ℹ️  Email watch not started:', err && err.message);
+      }
+    }, 10000); // Start after 10 seconds to let DB connect
+  }
 });
 
 module.exports = app;
