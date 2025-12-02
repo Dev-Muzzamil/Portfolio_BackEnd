@@ -65,7 +65,13 @@ dbConnectPromise.then(async () => {
 // ========================================
 
 // Security middleware
-app.use(helmet());
+app.use(helmet({
+  hsts: {
+    maxAge: 31536000, // 1 year
+    includeSubDomains: true,
+    preload: true
+  }
+}));
 
 // Parse multiple frontend URLs from environment variable
 const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000')
