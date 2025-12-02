@@ -811,9 +811,13 @@ router.post('/compose', auth, adminOnly, [
 
     try {
       const transporter = createTransporter();
+      const fromAddress = getFromAddress();
+      const fromEmail = process.env.EMAIL_FROM || process.env.EMAIL_USER;
 
       const mailOptions = {
-        from: getFromAddress(),
+        from: fromAddress,
+        sender: fromEmail,
+        replyTo: fromEmail,
         to: to,
         subject: subject,
         html: `
