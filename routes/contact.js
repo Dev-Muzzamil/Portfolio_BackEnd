@@ -76,8 +76,24 @@ const upload = multer({
 
 // Helper function to create email transporter
 const createTransporter = () => {
+  const service = process.env.EMAIL_SERVICE || 'gmail';
+  
+  // For custom SMTP (to use custom from address like admin@yourdomain.com)
+  if (service === 'custom' || service === 'smtp') {
+    return nodemailer.createTransport({
+      host: process.env.EMAIL_HOST,
+      port: parseInt(process.env.EMAIL_PORT) || 587,
+      secure: process.env.EMAIL_SECURE === 'true', // true for 465, false for other ports
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      }
+    });
+  }
+  
+  // For Gmail or other services
   return nodemailer.createTransport({
-    service: 'gmail',
+    service: service,
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS
@@ -86,8 +102,13 @@ const createTransporter = () => {
 };
 
 // Helper function to get the from address
+// Gmail's "Send mail as" feature allows sending from aliases configured in Gmail settings
+// Format: "Display Name <email>" or just "email"
 const getFromAddress = () => {
-  return process.env.EMAIL_FROM || process.env.EMAIL_USER;
+  const fromName = process.env.EMAIL_FROM_NAME || 'Portfolio';
+  const fromEmail = process.env.EMAIL_FROM || process.env.EMAIL_USER;
+  
+  return `"${fromName}" <${fromEmail}>`;
 };
 
 // Create contact message (public)
