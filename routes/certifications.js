@@ -47,23 +47,23 @@ const router = express.Router();
  */
 router.get('/', async (req, res) => {
   try {
-    const certifications = await Certification.find({
-      isActive: true,
-      status: 'published',
-      visibility: 'public'
+    const certifications = await Certification.find({ 
+      isActive: true, 
+      status: 'published', 
+      visibility: 'public' 
     }).sort({ order: 1, issueDate: -1 });
-
-    res.json({
+    
+    res.json({ 
       success: true,
       certifications,
-      count: certifications.length
+      count: certifications.length 
     });
   } catch (error) {
     console.error('Get certifications error:', error);
-    res.status(500).json({
+    res.status(500).json({ 
       success: false,
       message: 'Server error',
-      error: error.message
+      error: error.message 
     });
   }
 });
@@ -83,22 +83,22 @@ router.get('/:id', [
 
     const certification = await Certification.findById(req.params.id);
     if (!certification || certification.status !== 'published' || certification.visibility !== 'public' || !certification.isActive) {
-      return res.status(404).json({
+      return res.status(404).json({ 
         success: false,
-        message: 'Certification not found'
+        message: 'Certification not found' 
       });
     }
-
-    res.json({
+    
+    res.json({ 
       success: true,
-      certification
+      certification 
     });
   } catch (error) {
     console.error('Get certification by ID error:', error);
-    res.status(500).json({
+    res.status(500).json({ 
       success: false,
       message: 'Server error',
-      error: error.message
+      error: error.message 
     });
   }
 });
@@ -116,11 +116,11 @@ router.get('/admin/all', auth, adminOnly, async (req, res) => {
     const skip = (page - 1) * limit;
 
     const query = {};
-
+    
     if (req.query.status) {
       query.status = req.query.status;
     }
-
+    
     if (req.query.search) {
       query.$or = [
         { title: { $regex: req.query.search, $options: 'i' } },
@@ -135,7 +135,7 @@ router.get('/admin/all', auth, adminOnly, async (req, res) => {
       .skip(skip)
       .limit(limit);
 
-    res.json({
+    res.json({ 
       success: true,
       certifications,
       pagination: {
@@ -147,10 +147,10 @@ router.get('/admin/all', auth, adminOnly, async (req, res) => {
     });
   } catch (error) {
     console.error('Get all certifications (admin) error:', error);
-    res.status(500).json({
+    res.status(500).json({ 
       success: false,
       message: 'Server error',
-      error: error.message
+      error: error.message 
     });
   }
 });
@@ -181,15 +181,15 @@ router.post('/', auth, adminOnly, [
     // Normalize issuer fields and convert skills
     const skillsData = Array.isArray(req.body.skills)
       ? req.body.skills.map(skill => {
-        if (typeof skill === 'string') {
-          return {
-            name: skill.toLowerCase().trim(),
-            proficiency: 'intermediate',
-            verified: true
-          };
-        }
-        return skill;
-      })
+          if (typeof skill === 'string') {
+            return {
+              name: skill.toLowerCase().trim(),
+              proficiency: 'intermediate',
+              verified: true
+            };
+          }
+          return skill;
+        })
       : [];
 
     const certData = {
@@ -267,17 +267,17 @@ router.post('/', auth, adminOnly, [
       }
     }
 
-    res.status(201).json({
+    res.status(201).json({ 
       success: true,
       message: 'Certification created successfully',
-      certification
+      certification 
     });
   } catch (error) {
     console.error('Create certification error:', error);
-    res.status(500).json({
+    res.status(500).json({ 
       success: false,
       message: 'Server error',
-      error: error.message
+      error: error.message 
     });
   }
 });
@@ -297,22 +297,22 @@ router.get('/admin/:id', [
 
     const certification = await Certification.findById(req.params.id);
     if (!certification) {
-      return res.status(404).json({
+      return res.status(404).json({ 
         success: false,
-        message: 'Certification not found'
+        message: 'Certification not found' 
       });
     }
 
-    res.json({
+    res.json({ 
       success: true,
-      certification
+      certification 
     });
   } catch (error) {
     console.error('Get certification (admin) error:', error);
-    res.status(500).json({
+    res.status(500).json({ 
       success: false,
       message: 'Server error',
-      error: error.message
+      error: error.message 
     });
   }
 });
@@ -343,9 +343,9 @@ router.put('/:id', [
 
     const certification = await Certification.findById(req.params.id);
     if (!certification) {
-      return res.status(404).json({
+      return res.status(404).json({ 
         success: false,
-        message: 'Certification not found'
+        message: 'Certification not found' 
       });
     }
 
@@ -358,7 +358,7 @@ router.put('/:id', [
       if (s.name) return String(s.name).toLowerCase();
       return null;
     }).filter(Boolean);
-
+    
     // Update fields, handling issuer synchronization
     const updateData = {
       ...req.body,
@@ -439,83 +439,17 @@ router.put('/:id', [
       }
     }
 
-    res.json({
+    res.json({ 
       success: true,
       message: 'Certification updated successfully',
-      certification
+      certification 
     });
   } catch (error) {
     console.error('Update certification error:', error);
-    res.status(500).json({
+    res.status(500).json({ 
       success: false,
       message: 'Server error',
-      error: error.message
-    });
-  }
-});
-
-/**
- * PUT /api/v1/admin/certifications/:id/toggle-active
- * Toggle certification active status
- */
-router.put('/:id/toggle-active', [
-  param('id').isMongoId().withMessage('Invalid certification ID')
-], auth, adminOnly, async (req, res) => {
-  try {
-    const certification = await Certification.findById(req.params.id);
-    if (!certification) {
-      return res.status(404).json({
-        success: false,
-        message: 'Certification not found'
-      });
-    }
-
-    certification.isActive = !certification.isActive;
-    await certification.save();
-
-    // Cascade visibility check to associated skills
-    if (certification.skills && certification.skills.length > 0) {
-      // Process in parallel
-      // Skills in certifications can be objects or strings, resolve to IDs if possible or names
-      // skillManager.recalculateSkillVisibility handles resolution internally if we pass IDs.
-      // But certification.skills might be objects with _id if they were populated or just objects.
-      // The schema says skills is an array of objects.
-      // We need to extract IDs if they exist, or names.
-      // Actually skillManager.recalculateSkillVisibility expects a skillId.
-      // We need to find the skill IDs associated with these names/objects.
-
-      // Better approach: Get all skills that reference this certification
-      // But we don't have a reverse lookup easily without querying Skills.
-      // Let's iterate over certification.skills and find the corresponding Skill docs.
-
-      const skillIdentifiers = certification.skills.map(s => s._id || s.name).filter(Boolean);
-
-      // We need to find the actual Skill documents to get their IDs for recalculation
-      // This is a bit complex because of the mixed storage.
-      // However, skillManager.syncSkills handles the linking.
-      // Let's rely on the fact that if they are linked, the Skill document has a source pointing to this certification.
-
-      // Alternative: Find all skills that have this certification as a source
-      const skillsToUpdate = await require('../models/Skill').find({
-        'sources': { $elemMatch: { type: 'certification', referenceId: certification._id } }
-      });
-
-      await Promise.all(skillsToUpdate.map(skill =>
-        skillManager.recalculateSkillVisibility(skill._id)
-      ));
-    }
-
-    res.json({
-      success: true,
-      message: `Certification ${certification.isActive ? 'activated' : 'deactivated'} successfully`,
-      certification
-    });
-  } catch (error) {
-    console.error('Toggle certification active error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error',
-      error: error.message
+      error: error.message 
     });
   }
 });
@@ -535,9 +469,9 @@ router.delete('/:id', [
 
     const certification = await Certification.findById(req.params.id);
     if (!certification) {
-      return res.status(404).json({
+      return res.status(404).json({ 
         success: false,
-        message: 'Certification not found'
+        message: 'Certification not found' 
       });
     }
 
@@ -569,17 +503,17 @@ router.delete('/:id', [
     }
 
     await Certification.findByIdAndDelete(req.params.id);
-
-    res.json({
+    
+    res.json({ 
       success: true,
-      message: 'Certification deleted successfully'
+      message: 'Certification deleted successfully' 
     });
   } catch (error) {
     console.error('Delete certification error:', error);
-    res.status(500).json({
+    res.status(500).json({ 
       success: false,
       message: 'Server error',
-      error: error.message
+      error: error.message 
     });
   }
 });
@@ -593,9 +527,9 @@ router.delete('/:id', [
 router.post('/extract-details', auth, adminOnly, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({
+      return res.status(400).json({ 
         success: false,
-        message: 'No file uploaded'
+        message: 'No file uploaded' 
       });
     }
 
@@ -657,7 +591,7 @@ router.post('/extract-details', auth, adminOnly, upload.single('file'), async (r
         originalFileResult.originalUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
       }
     }
-
+    
     // Add preview URL to extracted data if available
     if (previewImageResult.previewUrl) {
       extractedInfo.previewImageUrl = previewImageResult.previewUrl;
@@ -682,10 +616,10 @@ router.post('/extract-details', auth, adminOnly, upload.single('file'), async (r
 
   } catch (error) {
     console.error('Extract details error:', error);
-    res.status(500).json({
+    res.status(500).json({ 
       success: false,
       message: 'Server error during extraction',
-      error: error.message
+      error: error.message 
     });
   }
 });
@@ -698,9 +632,9 @@ router.post('/extract-details', auth, adminOnly, upload.single('file'), async (r
 router.post('/with-autofill', auth, adminOnly, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({
+      return res.status(400).json({ 
         success: false,
-        message: 'No file uploaded'
+        message: 'No file uploaded' 
       });
     }
 
@@ -708,7 +642,7 @@ router.post('/with-autofill', auth, adminOnly, upload.single('file'), async (req
 
     // Extract details from file
     const processingResult = await PDFService.processCertificateFile(req.file);
-
+    
     if (!processingResult.success) {
       return res.status(400).json({
         success: false,
@@ -718,19 +652,19 @@ router.post('/with-autofill', auth, adminOnly, upload.single('file'), async (req
     }
 
     const extracted = processingResult.extractedData;
-
+    
     // Convert extracted skills (strings) to skill objects for display
-    const skillsData = Array.isArray(extracted.skills)
+    const skillsData = Array.isArray(extracted.skills) 
       ? extracted.skills.map(skill => {
-        if (typeof skill === 'string') {
-          return {
-            name: skill.toLowerCase().trim(),
-            proficiency: 'intermediate',
-            verified: true
-          };
-        }
-        return skill;
-      })
+          if (typeof skill === 'string') {
+            return {
+              name: skill.toLowerCase().trim(),
+              proficiency: 'intermediate',
+              verified: true
+            };
+          }
+          return skill;
+        })
       : [];
 
     // Prepare cleaned data for preview (before extraction for Puppeteer rendering)
@@ -817,10 +751,10 @@ router.post('/with-autofill', auth, adminOnly, upload.single('file'), async (req
 
   } catch (error) {
     console.error('Autofill create certification error:', error);
-    res.status(500).json({
+    res.status(500).json({ 
       success: false,
       message: 'Server error',
-      error: error.message
+      error: error.message 
     });
   }
 });
@@ -840,9 +774,9 @@ router.post('/:id/generate-image', [
 
     const certification = await Certification.findById(req.params.id);
     if (!certification) {
-      return res.status(404).json({
+      return res.status(404).json({ 
         success: false,
-        message: 'Certification not found'
+        message: 'Certification not found' 
       });
     }
 
@@ -862,9 +796,9 @@ router.post('/:id/generate-image', [
       sourceUrl = certification.certificateFile.url;
     }
     if (!sourceUrl) {
-      return res.status(400).json({
+      return res.status(400).json({ 
         success: false,
-        message: 'No certificate file to convert'
+        message: 'No certificate file to convert' 
       });
     }
 
@@ -929,160 +863,12 @@ router.post('/:id/generate-image', [
 
   } catch (error) {
     console.error('Generate certificate image error:', error);
-    res.status(500).json({
+    res.status(500).json({ 
       success: false,
       message: 'Failed to generate certificate image',
-      error: error.message
+      error: error.message 
     });
   }
 });
 
 module.exports = router;
-
-// ============= REPORTS MANAGEMENT ROUTES =============
-
-/**
- * POST /api/v1/certifications/:id/reports
- * Add a report to a certification
- */
-router.post('/:id/reports', [
-  param('id').isMongoId().withMessage('Invalid certification ID')
-], auth, adminOnly, async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const certification = await Certification.findById(req.params.id);
-    if (!certification) {
-      return res.status(404).json({ success: false, message: 'Certification not found' });
-    }
-
-    const { title, description, type, file, link, visible } = req.body;
-
-    if (!title) {
-      return res.status(400).json({ success: false, message: 'Report title is required' });
-    }
-
-    if (!type || !['file', 'link'].includes(type)) {
-      return res.status(400).json({ success: false, message: 'Report type must be "file" or "link"' });
-    }
-
-    if (type === 'file' && (!file || !file.url)) {
-      return res.status(400).json({ success: false, message: 'File URL is required for file type reports' });
-    }
-
-    if (type === 'link' && (!link || !link.url)) {
-      return res.status(400).json({ success: false, message: 'Link URL is required for link type reports' });
-    }
-
-    const report = {
-      title,
-      description: description || '',
-      type,
-      file: type === 'file' ? file : undefined,
-      link: type === 'link' ? link : undefined,
-      visible: visible !== false,
-      createdAt: new Date()
-    };
-
-    certification.reports.push(report);
-    await certification.save();
-
-    res.status(201).json({
-      success: true,
-      message: 'Report added successfully',
-      report: certification.reports[certification.reports.length - 1],
-      certification
-    });
-  } catch (error) {
-    console.error('Add report error:', error);
-    res.status(500).json({ success: false, message: 'Server error', error: error.message });
-  }
-});
-
-/**
- * PUT /api/v1/certifications/:id/reports/:reportId
- * Update a report in a certification
- */
-router.put('/:id/reports/:reportId', [
-  param('id').isMongoId().withMessage('Invalid certification ID'),
-  param('reportId').isMongoId().withMessage('Invalid report ID')
-], auth, adminOnly, async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const certification = await Certification.findById(req.params.id);
-    if (!certification) {
-      return res.status(404).json({ success: false, message: 'Certification not found' });
-    }
-
-    const report = certification.reports.id(req.params.reportId);
-    if (!report) {
-      return res.status(404).json({ success: false, message: 'Report not found' });
-    }
-
-    const { title, description, type, file, link, visible } = req.body;
-
-    if (title !== undefined) report.title = title;
-    if (description !== undefined) report.description = description;
-    if (type !== undefined) report.type = type;
-    if (file !== undefined) report.file = file;
-    if (link !== undefined) report.link = link;
-    if (visible !== undefined) report.visible = visible;
-
-    await certification.save();
-
-    res.json({ success: true, message: 'Report updated successfully', report, certification });
-  } catch (error) {
-    console.error('Update report error:', error);
-    res.status(500).json({ success: false, message: 'Server error', error: error.message });
-  }
-});
-
-/**
- * DELETE /api/v1/certifications/:id/reports/:reportId
- * Delete a report from a certification
- */
-router.delete('/:id/reports/:reportId', [
-  param('id').isMongoId().withMessage('Invalid certification ID'),
-  param('reportId').isMongoId().withMessage('Invalid report ID')
-], auth, adminOnly, async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const certification = await Certification.findById(req.params.id);
-    if (!certification) {
-      return res.status(404).json({ success: false, message: 'Certification not found' });
-    }
-
-    const report = certification.reports.id(req.params.reportId);
-    if (!report) {
-      return res.status(404).json({ success: false, message: 'Report not found' });
-    }
-
-    // If it's a file report, we could optionally delete from Cloudinary
-    if (report.type === 'file' && report.file?.publicId) {
-      try {
-        await cloudinary.uploader.destroy(report.file.publicId, { resource_type: 'raw' });
-      } catch (cloudErr) {
-        console.warn('Failed to delete file from Cloudinary:', cloudErr.message);
-      }
-    }
-
-    certification.reports.pull({ _id: req.params.reportId });
-    await certification.save();
-
-    res.json({ success: true, message: 'Report deleted successfully', certification });
-  } catch (error) {
-    console.error('Delete report error:', error);
-    res.status(500).json({ success: false, message: 'Server error', error: error.message });
-  }
-});

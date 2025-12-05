@@ -91,35 +91,46 @@ router.get('/', async (req, res) => {
     const projects = await Project.find(query)
       .populate('skills', 'name category proficiency level isActive')
       .sort({ featured: -1, order: 1, createdAt: -1 })
-      .skip(skip)
-      .limit(limitNum);
+      .limit(limitNum)
+      .skip(skip);
 
-    res.json({ projects });
+    const total = await Project.countDocuments(query);
+
+    res.json({
+      projects,
+      pagination: limitNum ? {
+        page: parseInt(page),
+        limit: limitNum,
+        total,
+        pages: Math.ceil(total / limitNum)
+      } : null
+    });
   } catch (error) {
     console.error('Get projects error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
 
-// Get single project by ID (public)
+// Get single project (public)
 router.get('/:id', async (req, res) => {
   try {
     const project = await Project.findById(req.params.id)
       .populate('skills', 'name category proficiency level isActive');
-    if (!project) {
+    if (!project || !project.isActive) {
       return res.status(404).json({ message: 'Project not found' });
     }
     res.json({ project });
   } catch (error) {
-    console.error('Get project error:', error);
+    console.error('Get project by ID error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
 
-// Create new project (admin only)
+// Create project (admin only)
 router.post('/', auth, adminOnly, [
   body('title').trim().isLength({ min: 1 }).withMessage('Title is required'),
-  body('description').trim().isLength({ min: 1 }).withMessage('Description is required')
+  body('description').trim().isLength({ min: 1 }).withMessage('Description is required'),
+  body('technologies').isArray({ min: 1 }).withMessage('At least one technology required')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -127,40 +138,67 @@ router.post('/', auth, adminOnly, [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const {
-      title, description, longDescription, technologies, liveUrl, githubUrl, 
-      featured, category, subcategories, tags, images, screenshots, order,
-      completedAt, completedAtInstitution, academicScale, linkedInstitutes
-    } = req.body;
-
-    const project = new Project({
-      title,
-      description,
-      longDescription: longDescription || '',
-      technologies: technologies || [],
-      liveUrl: liveUrl || '',
-      githubUrl: githubUrl || '',
-      featured: featured || false,
-      category: normalizeCategory(category),
-      subcategories: normalizeSubcategories(subcategories),
-      tags: tags || [],
-      images: images || [],
-      screenshots: screenshots || [],
-      order: order || 0,
-      completedAt: completedAt || null,
-      completedAtInstitution: completedAtInstitution || '',
-      academicScale: normalizeAcademicScale(academicScale),
-      linkedInstitutes: linkedInstitutes || []
-    });
-
+    const projectBody = { ...req.body, category: normalizeCategory(req.body.category) };
+    // Accept legacy single category or a subcategories array
+    projectBody.subcategories = normalizeSubcategories(req.body.subcategories || req.body.category);
+    if (projectBody.category === 'academic') {
+      const scale = normalizeAcademicScale(req.body.academicScale);
+      if (scale) projectBody.academicScale = scale;
+    } else {
+      delete projectBody.academicScale;
+    }
+    // If project is ongoing/Current, ensure end-date fields aren't saved
+    if (projectBody.isCurrent) {
+      delete projectBody.endDate;
+      delete projectBody.endLabel;
+      delete projectBody.endPrecision;
+    }
+    const project = new Project(projectBody);
     await project.save();
 
-    // Track skill sources for technologies
-    if (project.technologies && project.technologies.length > 0) {
-      for (const tech of project.technologies) {
-        await skillManager.addSkillSource(tech, 'project', project._id);
+    // Sync skills automatically if technologies are provided
+    if (req.body.technologies && req.body.technologies.length > 0) {
+      try {
+        const syncedSkills = await skillManager.syncSkills(req.body.technologies, 'project', project._id);
+        // Link ObjectId references to project.skills
+        if (syncedSkills && syncedSkills.length > 0) {
+          project.skills = syncedSkills.map(s => s._id);
+          await project.save();
+        }
+      } catch (skillError) {
+        console.warn('Failed to sync skills for project:', skillError.message);
+        // Don't fail the project creation if skill sync fails
       }
     }
+
+    // Trigger automatic screenshot generation if project has liveUrl
+    if (project.liveUrl && project.liveUrl.startsWith('http')) {
+      setImmediate(async () => {
+        try {
+          console.log(`Auto-generating screenshot for new project: ${project.title}`);
+          const screenshotUrl = await generateScreenshot(project.liveUrl, project._id);
+
+          if (screenshotUrl) {
+            project.screenshots = [screenshotUrl];
+            project.screenshotUpdatedAt = new Date();
+            await project.save();
+            console.log(`Screenshot auto-generated for project: ${project.title}`);
+          }
+        } catch (error) {
+          console.error(`Failed to auto-generate screenshot for project ${project.title}:`, error.message);
+        }
+      });
+    }
+    const onlyStale = String(req.query.onlyStale || 'true').toLowerCase() !== 'false';
+    const cutoffMs = 6 * 60 * 60 * 1000; // 6 hours
+    const cutoffDate = new Date(Date.now() - cutoffMs);
+
+    const baseQuery = { isActive: true, liveUrl: { $exists: true, $ne: '' } };
+    const query = onlyStale
+      ? { ...baseQuery, $or: [ { screenshotUpdatedAt: { $lt: cutoffDate } }, { screenshotUpdatedAt: { $exists: false } } ] }
+      : baseQuery;
+
+    const projects = await Project.find(query);
 
     res.status(201).json({ message: 'Project created successfully', project });
   } catch (error) {
@@ -172,7 +210,8 @@ router.post('/', auth, adminOnly, [
 // Update project (admin only)
 router.put('/:id', auth, adminOnly, [
   body('title').optional().trim().isLength({ min: 1 }).withMessage('Title cannot be empty'),
-  body('description').optional().trim().isLength({ min: 1 }).withMessage('Description cannot be empty')
+  body('description').optional().trim().isLength({ min: 1 }).withMessage('Description cannot be empty'),
+  body('technologies').optional().isArray({ min: 1 }).withMessage('At least one technology required')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -185,50 +224,60 @@ router.put('/:id', auth, adminOnly, [
       return res.status(404).json({ message: 'Project not found' });
     }
 
-    const {
-      title, description, longDescription, technologies, liveUrl, githubUrl, 
-      featured, category, subcategories, tags, images, screenshots, order,
-      isActive, completedAt, completedAtInstitution, academicScale, linkedInstitutes
-    } = req.body;
-
-    // Track old technologies for skill management
     const oldTechnologies = project.technologies || [];
+    // Ensure category and subcategories normalized
+    const updatedBody = { ...req.body };
+    if (req.body.category) updatedBody.category = normalizeCategory(req.body.category);
+    if (req.body.subcategories || req.body.category) {
+      updatedBody.subcategories = normalizeSubcategories(req.body.subcategories || req.body.category);
+    }
+    if ((updatedBody.category || project.category) === 'academic') {
+      const scale = normalizeAcademicScale(req.body.academicScale);
+      if (scale) updatedBody.academicScale = scale; else if (req.body.academicScale === '') updatedBody.academicScale = undefined;
+    } else {
+      updatedBody.academicScale = undefined;
+    }
 
-    if (title !== undefined) project.title = title;
-    if (description !== undefined) project.description = description;
-    if (longDescription !== undefined) project.longDescription = longDescription;
-    if (technologies !== undefined) project.technologies = technologies;
-    if (liveUrl !== undefined) project.liveUrl = liveUrl;
-    if (githubUrl !== undefined) project.githubUrl = githubUrl;
-    if (featured !== undefined) project.featured = featured;
-    if (category !== undefined) project.category = normalizeCategory(category);
-    if (subcategories !== undefined) project.subcategories = normalizeSubcategories(subcategories);
-    if (tags !== undefined) project.tags = tags;
-    if (images !== undefined) project.images = images;
-    if (screenshots !== undefined) project.screenshots = screenshots;
-    if (order !== undefined) project.order = order;
-    if (isActive !== undefined) project.isActive = isActive;
-    if (completedAt !== undefined) project.completedAt = completedAt;
-    if (completedAtInstitution !== undefined) project.completedAtInstitution = completedAtInstitution;
-    if (academicScale !== undefined) project.academicScale = normalizeAcademicScale(academicScale);
-    if (linkedInstitutes !== undefined) project.linkedInstitutes = linkedInstitutes;
+    // If project marked isCurrent during update, clear end-date fields
+    if (updatedBody.isCurrent) {
+      updatedBody.endDate = undefined;
+      updatedBody.endLabel = undefined;
+      updatedBody.endPrecision = undefined;
+    }
 
-    await project.save();
+    // Use direct atomic update for reliability
+    const updated = await Project.findByIdAndUpdate(
+      req.params.id,
+      { $set: updatedBody },
+      { new: true }
+    );
+    if (!updated) {
+      return res.status(404).json({ message: 'Project not found after update' });
+    }
 
-    // Update skill sources if technologies changed
-    if (technologies !== undefined) {
-      const removedTech = oldTechnologies.filter(t => !technologies.includes(t));
-      const addedTech = technologies.filter(t => !oldTechnologies.includes(t));
+    // Sync skills if technologies changed
+    if (req.body.technologies) {
+      try {
+        // Remove old skill references
+        for (const tech of oldTechnologies) {
+          if (!req.body.technologies.includes(tech)) {
+            await skillManager.removeSkillSource(tech, 'project', updated._id);
+          }
+        }
 
-      for (const tech of removedTech) {
-        await skillManager.removeSkillSource(tech, 'project', project._id);
-      }
-      for (const tech of addedTech) {
-        await skillManager.addSkillSource(tech, 'project', project._id);
+        // Add new skill references and link ObjectIds
+        const syncedSkills = await skillManager.syncSkills(req.body.technologies, 'project', updated._id);
+        if (syncedSkills && syncedSkills.length > 0) {
+          updated.skills = syncedSkills.map(s => s._id);
+          await updated.save();
+        }
+      } catch (skillError) {
+        console.warn('Failed to sync skills for updated project:', skillError.message);
+        // Don't fail the project update if skill sync fails
       }
     }
 
-    res.json({ message: 'Project updated successfully', project });
+    res.json({ message: 'Project updated successfully', project: updated });
   } catch (error) {
     console.error('Update project error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -392,7 +441,7 @@ router.post(
       const query = onlyChanged
         ? baseQuery
         : (onlyStale
-          ? { ...baseQuery, $or: [{ screenshotUpdatedAt: { $lt: cutoffDate } }, { screenshotUpdatedAt: { $exists: false } }] }
+          ? { ...baseQuery, $or: [ { screenshotUpdatedAt: { $lt: cutoffDate } }, { screenshotUpdatedAt: { $exists: false } } ] }
           : baseQuery);
 
       const projects = await Project.find(query);
@@ -427,7 +476,7 @@ router.post(
             const headRes2 = await fetch(project.liveUrl, { method: 'HEAD' });
             project.lastSeenETag = headRes2.headers.get('etag') || project.lastSeenETag;
             project.lastSeenLastModified = headRes2.headers.get('last-modified') || project.lastSeenLastModified;
-          } catch { }
+          } catch {}
           await project.save();
           results.push({ project: project.title, status: 'success', screenshotUrl });
         } else {
@@ -477,195 +526,12 @@ router.post('/:id/refresh-screenshot', auth, adminOnly, async (req, res) => {
       const headRes2 = await fetch(project.liveUrl, { method: 'HEAD' });
       project.lastSeenETag = headRes2.headers.get('etag') || project.lastSeenETag;
       project.lastSeenLastModified = headRes2.headers.get('last-modified') || project.lastSeenLastModified;
-    } catch { }
+    } catch {}
     await project.save();
 
     res.json({ message: 'Screenshot refreshed', screenshotUrl });
   } catch (error) {
     console.error('Single screenshot refresh error:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-// ============ REPORTS & FILES MANAGEMENT ============
-
-// Add a report to a project (admin only)
-router.post('/:id/reports', auth, adminOnly, async (req, res) => {
-  try {
-    const project = await Project.findById(req.params.id);
-    if (!project) {
-      return res.status(404).json({ message: 'Project not found' });
-    }
-
-    const { title, description, type, file, link, visible } = req.body;
-
-    if (!title) {
-      return res.status(400).json({ message: 'Report title is required' });
-    }
-
-    if (!type || !['file', 'link'].includes(type)) {
-      return res.status(400).json({ message: 'Report type must be "file" or "link"' });
-    }
-
-    if (type === 'file' && (!file || !file.url)) {
-      return res.status(400).json({ message: 'File URL is required for file type reports' });
-    }
-
-    if (type === 'link' && (!link || !link.url)) {
-      return res.status(400).json({ message: 'Link URL is required for link type reports' });
-    }
-
-    const report = {
-      title,
-      description: description || '',
-      type,
-      file: type === 'file' ? file : undefined,
-      link: type === 'link' ? link : undefined,
-      visible: visible !== false,
-      uploadedAt: new Date()
-    };
-
-    project.reports.push(report);
-    await project.save();
-
-    res.status(201).json({ 
-      message: 'Report added successfully', 
-      report: project.reports[project.reports.length - 1],
-      project 
-    });
-  } catch (error) {
-    console.error('Add report error:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-// Update a report in a project (admin only)
-router.put('/:id/reports/:reportId', auth, adminOnly, async (req, res) => {
-  try {
-    const project = await Project.findById(req.params.id);
-    if (!project) {
-      return res.status(404).json({ message: 'Project not found' });
-    }
-
-    const report = project.reports.id(req.params.reportId);
-    if (!report) {
-      return res.status(404).json({ message: 'Report not found' });
-    }
-
-    const { title, description, type, file, link, visible } = req.body;
-
-    if (title !== undefined) report.title = title;
-    if (description !== undefined) report.description = description;
-    if (type !== undefined) report.type = type;
-    if (file !== undefined) report.file = file;
-    if (link !== undefined) report.link = link;
-    if (visible !== undefined) report.visible = visible;
-
-    await project.save();
-
-    res.json({ message: 'Report updated successfully', report, project });
-  } catch (error) {
-    console.error('Update report error:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-// Delete a report from a project (admin only)
-router.delete('/:id/reports/:reportId', auth, adminOnly, async (req, res) => {
-  try {
-    const project = await Project.findById(req.params.id);
-    if (!project) {
-      return res.status(404).json({ message: 'Project not found' });
-    }
-
-    const report = project.reports.id(req.params.reportId);
-    if (!report) {
-      return res.status(404).json({ message: 'Report not found' });
-    }
-
-    // If it's a file report, we could optionally delete from Cloudinary here
-    // For now, just remove from the array
-    project.reports.pull({ _id: req.params.reportId });
-    await project.save();
-
-    res.json({ message: 'Report deleted successfully', project });
-  } catch (error) {
-    console.error('Delete report error:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-// Add a file to a project (admin only)
-router.post('/:id/files', auth, adminOnly, async (req, res) => {
-  try {
-    const project = await Project.findById(req.params.id);
-    if (!project) {
-      return res.status(404).json({ message: 'Project not found' });
-    }
-
-    const { url, publicId, originalName, mimeType, size, category, description } = req.body;
-
-    if (!url) {
-      return res.status(400).json({ message: 'File URL is required' });
-    }
-
-    // Validate category enum
-    const validCategories = ['report', 'documentation', 'presentation', 'code', 'dataset', 'general', 'other'];
-    const fileCategory = validCategories.includes(category) ? category : 'general';
-
-    const file = {
-      url,
-      publicId: publicId || '',
-      originalName: originalName || 'Untitled',
-      mimeType: mimeType || 'application/octet-stream',
-      size: size || 0,
-      category: fileCategory,
-      description: description || '',
-      createdAt: new Date()
-    };
-
-    project.files.push(file);
-    await project.save();
-
-    res.status(201).json({ 
-      message: 'File added successfully', 
-      file: project.files[project.files.length - 1],
-      project 
-    });
-  } catch (error) {
-    console.error('Add file error:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-// Delete a file from a project (admin only)
-router.delete('/:id/files/:fileId', auth, adminOnly, async (req, res) => {
-  try {
-    const project = await Project.findById(req.params.id);
-    if (!project) {
-      return res.status(404).json({ message: 'Project not found' });
-    }
-
-    const file = project.files.id(req.params.fileId);
-    if (!file) {
-      return res.status(404).json({ message: 'File not found' });
-    }
-
-    // Optionally delete from Cloudinary
-    if (file.publicId) {
-      try {
-        await cloudinary.uploader.destroy(file.publicId, { resource_type: 'raw' });
-      } catch (cloudErr) {
-        console.warn('Failed to delete file from Cloudinary:', cloudErr.message);
-      }
-    }
-
-    project.files.pull({ _id: req.params.fileId });
-    await project.save();
-
-    res.json({ message: 'File deleted successfully', project });
-  } catch (error) {
-    console.error('Delete file error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });

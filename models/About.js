@@ -33,12 +33,6 @@ const aboutSchema = new mongoose.Schema({
       url: String
     }]
   },
-  // New socialLinks array for better management with visibility control
-  socialLinks: [{
-    platform: { type: String, required: true },
-    url: { type: String, required: true },
-    isActive: { type: Boolean, default: true }
-  }],
   yearsExperience: { type: Number, default: 0 },
   projectsCount: { type: Number, default: 0 },
   technologiesCount: { type: Number, default: 0 },
@@ -54,7 +48,7 @@ const aboutSchema = new mongoose.Schema({
   education: [mongoose.Schema.Types.Mixed],
   resumes: [mongoose.Schema.Types.Mixed],
   isActive: { type: Boolean, default: true }
-}, {
+}, { 
   timestamps: true,
   strict: false // Allow additional fields for flexibility
 });

@@ -19,11 +19,30 @@ const SettingSchema = new mongoose.Schema({
     fontFamily: { type: String, default: 'Inter' },
     fontSize: { type: String, default: '16px' }
   },
+  seo: {
+    ogTitle: { type: String, default: '' },
+    ogDescription: { type: String, default: '' },
+    ogImage: { type: String, default: '' },
+    twitterCard: { type: String, default: 'summary_large_image' },
+    robots: { type: String, default: 'index, follow' }
+  },
   notifications: {
     emailNotifications: { type: Boolean, default: true },
     contactFormNotifications: { type: Boolean, default: true },
     projectUpdates: { type: Boolean, default: false },
     systemAlerts: { type: Boolean, default: true }
+  },
+  security: {
+    twoFactorAuth: { type: Boolean, default: false },
+    sessionTimeout: { type: Number, default: 30 },
+    maxLoginAttempts: { type: Number, default: 5 },
+    passwordExpiry: { type: Number, default: 90 }
+  },
+  backup: {
+    autoBackup: { type: Boolean, default: true },
+    backupFrequency: { type: String, default: 'daily' },
+    backupRetention: { type: Number, default: 30 },
+    cloudBackup: { type: Boolean, default: false }
   }
 }, { timestamps: true })
 

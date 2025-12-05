@@ -113,9 +113,6 @@ const certificateSchema = new mongoose.Schema({
     }
   }],
   
-  // Skills to show on card preview (if empty, shows first 3 from skills)
-  featuredSkills: [String],
-  
   // Files and Media
   files: [{
     url: {
