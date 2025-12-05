@@ -1,0 +1,16 @@
+node_modules
+npm-debug.log
+.env
+.env.*
+Dockerfile
+Dockerfile.*
+docker-compose.*
+.git
+.gitignore
+logs
+*.log
+coverage
+tmp
+dist
+build
+*.local
