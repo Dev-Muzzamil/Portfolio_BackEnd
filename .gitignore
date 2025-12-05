@@ -10,7 +10,5 @@ build/
 .vscode/
 .DS_Store
 *.log
-# ignore source version folders
-portfoliowebsite v1/
-portfoliowebsite v2/
-portfoliowebsite v3/
+# ignore archived source version folders at root
+/versions/

@@ -16,7 +16,7 @@ Structure per snapshot
 
 Notes
 -----
-- Source legacy folders portfoliowebsite v1/v2/v3 remain untracked for reference.
+- Archived source folders now live under versions/ (v1, v1.5 placeholder, v2, v3 backups) and stay untracked for reference.
 - node_modules, builds, and .env files are ignored at root via .gitignore.
 
 Usage
