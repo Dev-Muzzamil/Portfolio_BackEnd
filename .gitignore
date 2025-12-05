@@ -1,0 +1,16 @@
+# root ignores
+node_modules/
+dist/
+build/
+.cache/
+.tmp/
+.env
+.env.*
+.wrangler/
+.vscode/
+.DS_Store
+*.log
+# ignore source version folders
+portfoliowebsite v1/
+portfoliowebsite v2/
+portfoliowebsite v3/
