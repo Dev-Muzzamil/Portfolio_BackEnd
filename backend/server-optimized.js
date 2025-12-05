@@ -65,7 +65,13 @@ dbConnectPromise.then(async () => {
 // ========================================
 
 // Security middleware
-app.use(helmet());
+app.use(helmet({
+  hsts: {
+    maxAge: 31536000, // 1 year
+    includeSubDomains: true,
+    preload: true
+  }
+}));
 
 // Parse multiple frontend URLs from environment variable
 const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000')
@@ -274,6 +280,19 @@ app.listen(PORT, () => {
     }, refreshMs);
   } else {
     console.log('ℹ️  CRON_SECRET not set, screenshot refresh disabled');
+  }
+
+  // Auto-start email watching if email is configured
+  if (process.env.EMAIL_USER && process.env.EMAIL_PASS && process.env.CONTACT_DISABLE_EMAIL !== 'true') {
+    setTimeout(async () => {
+      try {
+        const { startEmailWatch } = require('./utils/emailFetcher');
+        await startEmailWatch();
+        console.log('📧 Email watch started automatically');
+      } catch (err) {
+        console.log('ℹ️  Email watch not started:', err && err.message);
+      }
+    }, 10000); // Start after 10 seconds to let DB connect
   }
 });
 

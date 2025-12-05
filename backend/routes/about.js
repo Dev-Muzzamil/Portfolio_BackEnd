@@ -8,7 +8,6 @@ const router = express.Router();
 // Get about section data (public)
 router.get('/', async (req, res) => {
   try {
-    // Serve active-only for public endpoints; return first doc for admin/internal mounts
     const base = req.baseUrl || '';
     const isPublic = base.includes('/public');
     const filter = isPublic ? { isActive: true } : {};
@@ -55,7 +54,6 @@ router.post('/', auth, adminOnly, [
       resumes
     } = req.body;
 
-    // Build atomic update document to avoid Mixed-type change tracking issues
     const update = {};
     if (summary !== undefined) update.summary = summary;
     if (professionalBackground !== undefined) update.professionalBackground = professionalBackground;
@@ -112,6 +110,7 @@ router.put('/', auth, adminOnly, [
       phone,
       address,
       social,
+      socialLinks,
       yearsExperience,
       projectsCount,
       technologiesCount,
@@ -134,6 +133,13 @@ router.put('/', auth, adminOnly, [
     if (phone !== undefined) update.phone = phone;
     if (address !== undefined) update.address = address;
     if (social !== undefined) update.social = social;
+    if (socialLinks !== undefined) {
+      update.socialLinks = Array.isArray(socialLinks) ? socialLinks.map(link => ({
+        platform: link.platform,
+        url: link.url,
+        isActive: link.isActive !== false
+      })) : [];
+    }
     if (yearsExperience !== undefined) update.yearsExperience = Number(yearsExperience) || 0;
     if (projectsCount !== undefined) update.projectsCount = Number(projectsCount) || 0;
     if (technologiesCount !== undefined) update.technologiesCount = Number(technologiesCount) || 0;

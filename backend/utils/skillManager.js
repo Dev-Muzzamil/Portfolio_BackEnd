@@ -282,7 +282,7 @@ class SkillManager {
   async deleteSkill(skillId, force = false) {
     const skill = await this._resolveSkill(skillId);
     if (!skill) throw new Error('Skill not found');
-    
+
     if (!force) {
       const check = await this.canDeleteSkill(skill._id);
       if (!check.canDelete) {
@@ -511,8 +511,8 @@ class SkillManager {
       activeEducation: references.education.filter(e => e.isActive).length,
       totalReferences: references.projects.length + references.certifications.length + references.education.length,
       activeReferences: references.projects.filter(p => p.isActive).length +
-                       references.certifications.filter(c => c.isActive).length +
-                       references.education.filter(e => e.isActive).length
+        references.certifications.filter(c => c.isActive).length +
+        references.education.filter(e => e.isActive).length
     };
   }
 
@@ -531,7 +531,7 @@ class SkillManager {
     const skillNameSet = new Set(existingSkillDocs.map(s => String(s.name).toLowerCase()));
 
     // Clean projects: projects may store technologies (strings) or skills (ids)
-    const projects = await Project.find({ $or: [ { skills: { $exists: true, $ne: [] } }, { technologies: { $exists: true, $ne: [] } } ] });
+    const projects = await Project.find({ $or: [{ skills: { $exists: true, $ne: [] } }, { technologies: { $exists: true, $ne: [] } }] });
     for (const project of projects) {
       let changed = false;
       if (Array.isArray(project.skills)) {
@@ -568,7 +568,202 @@ class SkillManager {
     }
 
     // Clean education: support string names and id references
-    const educationItems = await Education.find({ $or: [ { skills: { $exists: true, $ne: [] } } ] });
+    if (entityType === 'project') {
+      // For projects, use 'technologies' as string names
+      if (!Array.isArray(entity.technologies)) entity.technologies = [];
+      if (!entity.technologies.includes(skill.name)) entity.technologies.push(skill.name);
+    } else if (entityType === 'certification' || entityType === 'education') {
+      // Embed skill object in certification/education
+      if (!Array.isArray(entity[entitySkillsField])) entity[entitySkillsField] = [];
+      entity[entitySkillsField].push({ name: skill.name, proficiency: skill.proficiency || 'intermediate', verified: true });
+    } else {
+      // default to pushing id
+      entity[entitySkillsField].push(skill._id);
+    }
+    await entity.save();
+
+    // Add source reference to skill
+    const existingSource = skill.sources.find(s =>
+      s.type === entityType && s.referenceId.toString() === entityId.toString()
+    );
+
+    if (!existingSource) {
+      skill.sources.push({ type: entityType, referenceId: entityId });
+      await skill.save();
+    }
+
+    return { skill, entity };
+  }
+
+  // Unlink skill from entity
+  async unlinkSkillFromEntity(skillId, entityType, entityId) {
+    const skill = await this._resolveSkill(skillId);
+    if (!skill) throw new Error('Skill not found');
+
+    let entity;
+    let entitySkillsField;
+
+    switch (entityType) {
+      case 'project':
+        entity = await Project.findById(entityId);
+        entitySkillsField = 'skills';
+        break;
+      case 'certification':
+        entity = await Certification.findById(entityId);
+        entitySkillsField = 'skills';
+        break;
+      case 'education':
+        entity = await Education.findById(entityId);
+        entitySkillsField = 'skills';
+        break;
+      default:
+        throw new Error('Invalid entity type');
+    }
+
+    if (!entity) throw new Error(`${entityType} not found`);
+
+    // Remove skill from entity depending on storage format
+    if (entityType === 'project') {
+      if (Array.isArray(entity.technologies)) {
+        entity.technologies = entity.technologies.filter(t => String(t).toLowerCase() !== skill.name.toLowerCase());
+      }
+    } else if (entityType === 'certification' || entityType === 'education') {
+      if (Array.isArray(entity[entitySkillsField])) {
+        entity[entitySkillsField] = entity[entitySkillsField].filter(s => {
+          if (!s) return false;
+          if (typeof s === 'string') return s.toLowerCase() !== skill.name.toLowerCase();
+          if (s.name) return (s.name || '').toLowerCase() !== (skill.name || '').toLowerCase();
+          if (s._id) return s._id.toString() !== skill._id.toString();
+          return true;
+        });
+      }
+    } else {
+      // Default id-based removal
+      entity[entitySkillsField] = entity[entitySkillsField].filter(id => id.toString() !== skill._id.toString());
+    }
+    await entity.save();
+
+    // Remove source reference from skill
+    skill.sources = skill.sources.filter(s =>
+      !(s.type === entityType && s.referenceId.toString() === entityId.toString())
+    );
+
+    // Deactivate skill if no sources left and not manually created
+    if (skill.sources.length === 0) {
+      const manualSource = skill.sources.find(s => s.type === 'manual');
+      if (!manualSource) {
+        skill.isActive = false;
+      }
+    }
+
+    await skill.save();
+
+    return { skill, entity };
+  }
+
+  // Bulk link skills to entity
+  async bulkLinkSkillsToEntity(skillIds, entityType, entityId) {
+    const results = [];
+
+    for (const skillId of skillIds) {
+      try {
+        const result = await this.linkSkillToEntity(skillId, entityType, entityId);
+        results.push({ skillId, status: 'success', data: result });
+      } catch (error) {
+        results.push({ skillId, status: 'error', error: error.message });
+      }
+    }
+
+    return results;
+  }
+
+  // Bulk unlink skills from entity
+  async bulkUnlinkSkillsFromEntity(skillIds, entityType, entityId) {
+    const results = [];
+
+    for (const skillId of skillIds) {
+      try {
+        const result = await this.unlinkSkillFromEntity(skillId, entityType, entityId);
+        results.push({ skillId, status: 'success', data: result });
+      } catch (error) {
+        results.push({ skillId, status: 'error', error: error.message });
+      }
+    }
+
+    return results;
+  }
+
+  // Get skill usage statistics
+  async getSkillUsageStats(skillId) {
+    const references = await this.getSkillReferences(skillId);
+
+    return {
+      totalProjects: references.projects.length,
+      activeProjects: references.projects.filter(p => p.isActive).length,
+      totalCertifications: references.certifications.length,
+      activeCertifications: references.certifications.filter(c => c.isActive).length,
+      totalEducation: references.education.length,
+      activeEducation: references.education.filter(e => e.isActive).length,
+      totalReferences: references.projects.length + references.certifications.length + references.education.length,
+      activeReferences: references.projects.filter(p => p.isActive).length +
+        references.certifications.filter(c => c.isActive).length +
+        references.education.filter(e => e.isActive).length
+    };
+  }
+
+  // Clean up orphaned skill references
+  async cleanupOrphanedReferences() {
+    const results = {
+      cleanedProjects: 0,
+      cleanedCertifications: 0,
+      cleanedEducation: 0,
+      deactivatedSkills: 0
+    };
+
+    // Get all existing skill IDs and names
+    const existingSkillDocs = await Skill.find({}, '_id name');
+    const skillIdSet = new Set(existingSkillDocs.map(s => s._id.toString()));
+    const skillNameSet = new Set(existingSkillDocs.map(s => String(s.name).toLowerCase()));
+
+    // Clean projects: projects may store technologies (strings) or skills (ids)
+    const projects = await Project.find({ $or: [{ skills: { $exists: true, $ne: [] } }, { technologies: { $exists: true, $ne: [] } }] });
+    for (const project of projects) {
+      let changed = false;
+      if (Array.isArray(project.skills)) {
+        const originalCount = project.skills.length;
+        project.skills = project.skills.filter(skillId => skillIdSet.has(String(skillId)));
+        if (project.skills.length !== originalCount) changed = true;
+      }
+      if (Array.isArray(project.technologies)) {
+        const originalCount = project.technologies.length;
+        project.technologies = project.technologies.filter(t => t && skillNameSet.has(String(t).toLowerCase()));
+        if (project.technologies.length !== originalCount) changed = true;
+      }
+      if (changed) {
+        await project.save();
+        results.cleanedProjects++;
+      }
+    }
+
+    // Clean certifications: support embedded skill objects with names and id references
+    const certifications = await Certification.find({ skills: { $exists: true, $ne: [] } });
+    for (const certification of certifications) {
+      const originalCount = certification.skills.length;
+      certification.skills = certification.skills.filter(s => {
+        if (!s) return false;
+        if (typeof s === 'string') return skillNameSet.has(String(s).toLowerCase());
+        if (s._id) return skillIdSet.has(String(s._id));
+        if (s.name) return skillNameSet.has(String(s.name).toLowerCase());
+        return false;
+      });
+      if (certification.skills.length !== originalCount) {
+        await certification.save();
+        results.cleanedCertifications++;
+      }
+    }
+
+    // Clean education: support string names and id references
+    const educationItems = await Education.find({ $or: [{ skills: { $exists: true, $ne: [] } }] });
     for (const educationItem of educationItems) {
       const originalCount = (educationItem.skills || []).length;
       educationItem.skills = (educationItem.skills || []).filter(s => {
@@ -589,8 +784,8 @@ class SkillManager {
     for (const skill of allSkills) {
       const references = await this.getSkillReferences(skill._id);
       const hasActiveReferences = references.projects.some(p => p.isActive) ||
-                                 references.certifications.some(c => c.isActive) ||
-                                 references.education.some(e => e.isActive);
+        references.certifications.some(c => c.isActive) ||
+        references.education.some(e => e.isActive);
 
       if (!hasActiveReferences && !skill.sources.some(s => s.type === 'manual')) {
         skill.isActive = false;
@@ -600,6 +795,30 @@ class SkillManager {
     }
 
     return results;
+  }
+
+  // Recalculate skill visibility based on active references
+  async recalculateSkillVisibility(skillId) {
+    const skill = await this._resolveSkill(skillId);
+    if (!skill) return;
+
+    const references = await this.getSkillReferences(skill._id);
+    const hasActiveReferences = references.projects.some(p => p.isActive) ||
+      references.certifications.some(c => c.isActive) ||
+      references.education.some(e => e.isActive);
+
+    const isManual = skill.sources.some(s => s.type === 'manual');
+
+    // If it has active references OR is manually added, it should be active.
+    // Otherwise, if no active references and not manual, it should be inactive.
+    const shouldBeActive = hasActiveReferences || isManual;
+
+    if (skill.isActive !== shouldBeActive) {
+      skill.isActive = shouldBeActive;
+      await skill.save();
+      return { updated: true, skill };
+    }
+    return { updated: false, skill };
   }
 }
 
