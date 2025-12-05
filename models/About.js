@@ -1,131 +1,62 @@
 const mongoose = require('mongoose');
 
 const aboutSchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  title: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  bio: {
-    type: [String],
-    required: true,
-    validate: {
-      validator: function(v) {
-        return Array.isArray(v) && v.length > 0;
-      },
-      message: 'Bio must contain at least one paragraph'
-    }
-  },
-  shortBio: {
-    type: [String],
-    required: true,
-    validate: {
-      validator: function(v) {
-        return Array.isArray(v) && v.length > 0;
-      },
-      message: 'Short bio must contain at least one paragraph'
-    },
-    maxlength: 200
-  },
-  photo: {
-    url: String,
-    publicId: String
-  },
-  resumes: [{
-    url: String,
-    publicId: String,
-    originalName: String,
-    mimeType: String,
-    size: Number,
-    title: String,
-    documentType: { 
-      type: String, 
-      enum: ['resume', 'cv'], 
-      default: 'resume' 
-    },
-    isActive: { type: Boolean, default: false },
-    createdAt: { type: Date, default: Date.now }
-  }],
-  activeResumeId: String,
-  location: {
-    type: String,
-    trim: true
-  },
-  email: {
-    type: String,
-    trim: true
-  },
-  phone: {
-    type: String,
-    trim: true
-  },
-  socialLinks: {
-    github: String,
+  summary: { type: String, required: true },
+  professionalBackground: { type: String, required: true },
+  photo: String,
+  keyAchievements: [String],
+  email: String,
+  phone: String,
+  address: String,
+  social: {
     linkedin: String,
-    x: String, // X (formerly Twitter)
+    github: String,
+    twitter: String,
     instagram: String,
-    facebook: String,
     youtube: String,
+    facebook: String,
     tiktok: String,
-    discord: String,
-    telegram: String,
-    whatsapp: String,
     snapchat: String,
-    reddit: String,
-    behance: String,
-    dribbble: String,
     pinterest: String,
+    reddit: String,
+    discord: String,
+    twitch: String,
     medium: String,
-    dev: String,
     stackoverflow: String,
+    dribbble: String,
+    behance: String,
+    whatsapp: String,
+    telegram: String,
     website: String,
-    custom: [{
-      name: String,
+    customLinks: [{
+      label: String,
       url: String
     }]
   },
-  experience: [{
-    company: String,
-    position: String,
-    duration: String,
-    description: String,
-    current: { type: Boolean, default: false }
+  // New socialLinks array for better management with visibility control
+  socialLinks: [{
+    platform: { type: String, required: true },
+    url: { type: String, required: true },
+    isActive: { type: Boolean, default: true }
   }],
-  education: [{
-    institution: String,
-    degree: String,
-    field: String,
-    duration: String,
-    description: String,
-    linkedProjects: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Project' }],
-    linkedCertificates: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Certificate' }],
-    linkedSkills: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Skill' }]
+  yearsExperience: { type: Number, default: 0 },
+  projectsCount: { type: Number, default: 0 },
+  technologiesCount: { type: Number, default: 0 },
+  certificatesCount: { type: Number, default: 0 },
+  showStatistics: { type: Boolean, default: true },
+  statistics: [{
+    label: String,
+    value: Number,
+    isActive: { type: Boolean, default: true }
   }],
-  documentType: {
-    type: String,
-    enum: ['resume', 'cv', 'both'],
-    default: 'resume'
-  },
-  skillOverrides: [{
-    skillName: { type: String, required: true },
-    source: { type: String, required: true }, // 'project', 'certificate', 'manual'
-    sourceId: { type: String, required: true }, // ID of the source project/certificate
-    action: { 
-      type: String, 
-      enum: ['hide', 'show', 'delete'], 
-      required: true 
-    },
-    createdAt: { type: Date, default: Date.now }
-  }]
+  bio: [String],
+  experience: [mongoose.Schema.Types.Mixed],
+  education: [mongoose.Schema.Types.Mixed],
+  resumes: [mongoose.Schema.Types.Mixed],
+  isActive: { type: Boolean, default: true }
 }, {
-  timestamps: true
+  timestamps: true,
+  strict: false // Allow additional fields for flexibility
 });
 
-module.exports = mongoose.model('About', aboutSchema);
-
-
+module.exports = mongoose.models.About || mongoose.model('About', aboutSchema, 'abouts');

@@ -2,24 +2,59 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
-const auth = require('../middleware/auth');
+const { auth } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Debug middleware for auth routes
-router.use((req, res, next) => {
-  console.log(`🔍 Auth Route: ${req.method} ${req.path}`);
-  next();
+// Register admin user (one-time setup)
+router.post('/register', [
+  body('username').trim().isLength({ min: 3 }).withMessage('Username must be at least 3 characters'),
+  body('email').isEmail().normalizeEmail().withMessage('Valid email required'),
+  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { username, email, password } = req.body;
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ $or: [{ email }, { username }] });
+    if (existingUser) {
+      return res.status(400).json({ message: 'User already exists' });
+    }
+
+    // Create new user
+    const user = new User({ username, email, password, role: 'admin', isActive: true });
+    await user.save();
+
+    // Generate token
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+
+    res.status(201).json({
+      message: 'Admin user created successfully',
+      token,
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        role: user.role
+      }
+    });
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
 });
 
 // Login
 router.post('/login', [
-  body('email').isEmail().withMessage('Please provide a valid email'),
-  body('password').exists().withMessage('Password is required')
+  body('email').isEmail().normalizeEmail().withMessage('Valid email required'),
+  body('password').exists().withMessage('Password required')
 ], async (req, res) => {
-  console.log('🔐 LOGIN ATTEMPT STARTED');
   try {
-    console.log('Request body:', req.body); // Debug: Check if body is parsed
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
@@ -27,113 +62,121 @@ router.post('/login', [
 
     const { email, password } = req.body;
 
-    console.log('Login attempt - Email:', email, 'Password length:', password ? password.length : 0);
+    // Find user
     const user = await User.findOne({ email });
-    console.log('User found:', !!user);
-    if (!user) {
-      return res.status(400).json({ message: 'Invalid credentials' });
+    if (!user || !user.isActive) {
+      return res.status(401).json({ message: 'Invalid credentials' });
     }
 
+    // Check password
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
-      return res.status(400).json({ message: 'Invalid credentials' });
+      return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    // Create access token (30 minutes)
-    const token = jwt.sign(
-      { id: user._id, type: 'access' },
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '30m' }
-    );
+    // Update last login
+    user.lastLogin = new Date();
+    await user.save();
 
-    // Create refresh token (7 days)
-    const refreshToken = jwt.sign(
-      { id: user._id, type: 'refresh' },
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '7d' }
-    );
+    // Generate token
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
     res.json({
+      message: 'Login successful',
       token,
-      refreshToken,
       user: {
         id: user._id,
         username: user.username,
         email: user.email,
-        role: user.role
+        role: user.role,
+        lastLogin: user.lastLogin
       }
     });
   } catch (error) {
-    console.error(error);
+    console.error('Login error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
 
-// Refresh token endpoint
-router.post('/refresh', async (req, res) => {
+// Get current user profile
+router.get('/profile', auth, async (req, res) => {
   try {
-    const { refreshToken } = req.body;
-    
-    if (!refreshToken) {
-      return res.status(401).json({ message: 'Refresh token required' });
-    }
-
-    // Verify refresh token
-    const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET || 'your-secret-key');
-    
-    if (decoded.type !== 'refresh') {
-      return res.status(401).json({ message: 'Invalid token type' });
-    }
-
-    // Find user
-    const user = await User.findById(decoded.id);
-    if (!user) {
-      return res.status(401).json({ message: 'User not found' });
-    }
-
-    // Generate new access token
-    const newToken = jwt.sign(
-      { id: user._id, type: 'access' },
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '30m' }
-    );
-
-    res.json({
-      token: newToken,
-      user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-        role: user.role
-      }
-    });
+    const user = await User.findById(req.user._id).select('-password');
+    res.json({ user });
   } catch (error) {
-    console.error('Refresh token error:', error);
-    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
-      return res.status(401).json({ message: 'Invalid or expired refresh token' });
-    }
+    console.error('Profile fetch error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
 
-// Get current user
-router.get('/me', auth, async (req, res) => {
+// Update profile
+router.put('/profile', auth, [
+  body('username').optional().trim().isLength({ min: 3 }).withMessage('Username must be at least 3 characters'),
+  body('email').optional().isEmail().normalizeEmail().withMessage('Valid email required')
+], async (req, res) => {
   try {
-    res.json({
-      success: true,
-      user: {
-        id: req.user._id,
-        username: req.user.username,
-        email: req.user.email,
-        role: req.user.role
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { username, email } = req.body;
+    const user = req.user;
+
+    // Check if new email/username is already taken
+    if (email && email !== user.email) {
+      const existingUser = await User.findOne({ email });
+      if (existingUser) {
+        return res.status(400).json({ message: 'Email already in use' });
       }
-    });
+      user.email = email;
+    }
+
+    if (username && username !== user.username) {
+      const existingUser = await User.findOne({ username });
+      if (existingUser) {
+        return res.status(400).json({ message: 'Username already in use' });
+      }
+      user.username = username;
+    }
+
+    await user.save();
+    res.json({ message: 'Profile updated successfully', user: user.toObject({ getters: true }) });
   } catch (error) {
-    console.error('Get current user error:', error);
+    console.error('Profile update error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Change password
+router.put('/change-password', auth, [
+  body('currentPassword').exists().withMessage('Current password required'),
+  body('newPassword').isLength({ min: 6 }).withMessage('New password must be at least 6 characters')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { currentPassword, newPassword } = req.body;
+    const user = req.user;
+
+    // Verify current password
+    const isMatch = await user.comparePassword(currentPassword);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Current password is incorrect' });
+    }
+
+    // Update password
+    user.password = newPassword;
+    await user.save();
+
+    res.json({ message: 'Password changed successfully' });
+  } catch (error) {
+    console.error('Password change error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
 
 module.exports = router;
-
-
