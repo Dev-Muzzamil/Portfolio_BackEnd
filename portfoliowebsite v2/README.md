@@ -1,0 +1,17 @@
+# Portfolio Website v2
+
+## Overview
+Deployment-ready state with Docker/Heroku support and performance/SEO tuned frontend.
+
+## Backend
+- History: d99a926 Heroku config → 6b25b19 add Docker deploy config → e7ee17d add heroku.yml → 9268542 add Dockerfile + health endpoint + docs → 44305f5 multi-origin CORS (tagged v2 here).
+- Branches: `master`, `heroku/master`; working tree is clean.
+
+## Frontend
+- History: b2c1e29 initial Vite + Tailwind → 0174797 add SEO meta/schema/sitemap/robots → 9a9089f performance + Cloudinary auto-format + fetchpriority (tagged v2).
+- Branch: `master`; working tree clean.
+
+## Status
+Frozen as the intermediate historic state (v2) and used as the third commit in the consolidated timeline.
+
+---
