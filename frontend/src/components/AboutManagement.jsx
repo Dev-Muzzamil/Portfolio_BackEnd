@@ -7,7 +7,7 @@ import ImageEditor from './ImageEditor'
 import StickyActionBar from './StickyActionBar'
 
 const AboutManagement = () => {
-  const [aboutData, setAboutData] = useState({
+  const initialAboutState = {
     summary: '',
     professionalBackground: '',
     photo: '',
@@ -24,8 +24,10 @@ const AboutManagement = () => {
     bio: [],
     experience: [],
     education: [],
-    resumes: []
-  })
+    resumes: [],
+    isActive: true
+  }
+  const [aboutData, setAboutData] = useState(initialAboutState)
   const [loading, setLoading] = useState(false)
   const [editing, setEditing] = useState(false)
   const [showCropper, setShowCropper] = useState(false)
@@ -39,7 +41,7 @@ const AboutManagement = () => {
       if (response.data.about) {
         // Merge server data with our local defaults so missing fields remain defined
         const srv = response.data.about
-        const withDefaults = { ...aboutData, ...srv }
+        const withDefaults = { ...initialAboutState, ...srv }
         // Ensure bio is always an array for editor usability
         if (typeof withDefaults.bio === 'string') {
           // Split by blank lines or single newlines into paragraphs
@@ -95,7 +97,7 @@ const AboutManagement = () => {
       console.error('Error fetching about data:', error)
       toast.error('Failed to load about data')
     }
-  }, [aboutData])
+  }, [])
 
   useEffect(() => {
     fetchAboutData()
@@ -223,13 +225,30 @@ const AboutManagement = () => {
         keyAchievements: preparedAchievements,
       }
 
-      await api.put('/about', dataToSave)
+      // Client-side required validation to avoid server 400s
+      if (!dataToSave.summary || !dataToSave.professionalBackground) {
+        toast.error('Summary and Professional Background are required')
+        setLoading(false)
+        return
+      }
+
+      // Use admin endpoint explicitly
+      await api.put('/admin/about', dataToSave)
       setAboutData(prev => ({ ...prev, photo: imageUrl }))
       setEditing(false)
       toast.success('About section updated successfully!')
     } catch (error) {
-      console.error('Error saving about data:', error)
-      toast.error('Failed to save about section')
+        console.error('Error saving about data:', error)
+        // Prefer explicit server message or validation errors
+        const serverMessage = error?.response?.data?.message
+        const validationErrors = error?.response?.data?.errors
+        if (validationErrors && Array.isArray(validationErrors) && validationErrors.length) {
+          toast.error(validationErrors.map(e => e.msg).join(', '))
+        } else if (serverMessage) {
+          toast.error(serverMessage)
+        } else {
+          toast.error('Failed to save about section')
+        }
     } finally {
       setLoading(false)
     }
@@ -263,6 +282,9 @@ const AboutManagement = () => {
         <div>
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">About Section</h2>
           <p className="text-gray-600 dark:text-gray-400">Manage your about section content</p>
+          {!editing && aboutData.isActive === false && (
+            <p className="text-sm text-yellow-600 dark:text-yellow-300 mt-2">About section is currently hidden from the public site.</p>
+          )}
         </div>
         <div className="flex gap-3">
           {!editing && (
@@ -301,6 +323,20 @@ const AboutManagement = () => {
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed resize-none"
                   placeholder="Brief summary about yourself"
                 />
+              </div>
+
+              <div className="flex items-center gap-3">
+                <input
+                  id="about-visible-toggle"
+                  type="checkbox"
+                  checked={aboutData.isActive}
+                  disabled={!editing}
+                  onChange={(e) => handleInputChange('isActive', e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <label htmlFor="about-visible-toggle" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Show About Me section on the public site
+                </label>
               </div>
 
               <div>

@@ -5,7 +5,7 @@ This repo linearizes the historic drops into one git history. Branch/tag alignme
 
 - v1 – earliest snapshot: v1 backend commit 7212ed0, v1 frontend commit 87eb4ee.
 - v1.5 – mid snapshot: backend 5c8ce73 (server optimizations), frontend 098b360 (SEO + sitemap/robots updates).
-- v2 – deployment-ready snapshot: backend 44305f5 (Docker/Heroku + multi-origin CORS), frontend 9a9089f (performance/SEO tweaks).
+- v2 – deployment-ready snapshot: backend 44305f5 (multi-origin CORS), frontend 9a9089f (performance/SEO tweaks).
 - v3 – latest/current (also master): backend 80aefa5 (SEO/robots + optimizations), frontend cd0e3f4 (LazyImage + loading optimizations).
 - v4 – currently same as v3 (placeholder).
 
