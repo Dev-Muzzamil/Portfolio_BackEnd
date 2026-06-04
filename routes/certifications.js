@@ -639,8 +639,7 @@ router.post('/extract-details', auth, adminOnly, upload.single('file'), async (r
             const stream = cloudinary.uploader.upload_stream({
               resource_type: 'raw',
               folder: 'portfolio/certificates/originals',
-              public_id: `${req.file.originalname.replace(/\.[^/.]+$/, '')}_original_${Date.now()}`,
-              format: 'pdf'
+              public_id: `${req.file.originalname.replace(/\.[^/.]+$/, '')}_original_${Date.now()}`
             }, (error, result) => {
               if (error) reject(error);
               else resolve({ originalUrl: result.secure_url, originalPublicId: result.public_id, originalBytes: result.bytes || null });
@@ -769,8 +768,7 @@ router.post('/with-autofill', auth, adminOnly, upload.single('file'), async (req
             const stream = cloudinary.uploader.upload_stream({
               resource_type: 'raw',
               folder: 'portfolio/certificates/originals',
-              public_id: `${req.file.originalname.replace(/\.[^/.]+$/, '')}_original_${Date.now()}`,
-              format: 'pdf'
+              public_id: `${req.file.originalname.replace(/\.[^/.]+$/, '')}_original_${Date.now()}`
             }, (error, result) => {
               if (error) reject(error);
               else resolve({ originalUrl: result.secure_url, originalPublicId: result.public_id, originalBytes: result.bytes || null });

@@ -195,16 +195,14 @@ Build a production image and run a container locally (use `.env` or pass envs di
 
 ```bash
 # Build (from backend/)
-docker build -t portfolio-backend:latest .
+```
 
-# Run with .env file (exposes the port and mounts env vars)
-docker run --env-file ./.env -p 5000:5000 --name portfolio-backend portfolio-backend:latest
+> Note: Docker instructions removed — this project no longer includes a maintained Docker image. Please use provider deployments (Railway/Heroku/DigitalOcean) or run locally via `npm start` / `npm run dev`.
 ```
 
 Notes:
-- The server uses port `5000` by default (you can override with `PORT` env var).
-- Ensure `MONGODB_ATLAS_URI` or `MONGODB_URI` is configured and available to the container (via network or env).
-- Puppeteer, Tesseract and Poppler are installed in the image; if you rely on a specific language for Tesseract add it via the Dockerfile.
+- The server uses the configured `PORT` (default from `.env` or `3001` in development).
+-- Puppeteer, Tesseract and Poppler may be required by some utilities; consult your deployment platform for supplying those system packages if needed.
 
 
 ## Development
